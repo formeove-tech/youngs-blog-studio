@@ -24,7 +24,7 @@ export function createAiLimiter({dailyLimit=100,minuteLimit=10,concurrency=2,now
 
 export function validateDraft(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('입력 형식이 올바르지 않습니다.');
-  const limits = { name: 100, region: 100, url: 2048, address: 500, hours: 500, parking: 500, menu: 2000, visit: 3000, good: 4000, bad: 2000, companion: 100, disclosure: 200, keywords: 500 };
+  const limits = { name: 100, region: 100, url: 2048, address: 500, hours: 500, parking: 500, menu: 2000, visit: 3000, good: 4000, bad: 2000, companion: 100, disclosure: 200, keywords: 500, highlight: 300, relatedUrl: 2048 };
   const out = {};
   for (const [key, limit] of Object.entries(limits)) {
     out[key] = typeof data[key] === 'string' ? data[key].trim() : '';
@@ -32,6 +32,12 @@ export function validateDraft(data) {
   }
   if (!out.name) throw new Error('가게 이름을 입력해주세요.');
   if (!out.good && !out.visit) throw new Error('방문 계기나 좋았던 점을 한 가지 이상 적어주세요.');
+  out.template = data.template === 'calm' ? 'calm' : 'warm';
+  if (out.relatedUrl) {
+    let url; try { url=new URL(out.relatedUrl); } catch { throw new Error('관련 글은 네이버 블로그의 HTTPS 주소로 입력해주세요.'); }
+    if(url.protocol!=='https:' || !['blog.naver.com','m.blog.naver.com'].includes(url.hostname) || url.username || url.password || (url.port && url.port!=='443')) throw new Error('관련 글은 네이버 블로그의 HTTPS 주소로 입력해주세요.');
+    out.relatedUrl=url.href;
+  }
   const photos = Array.isArray(data.photos) ? data.photos : [];
   if (photos.length > 20) throw new Error('사진은 최대 20장까지 넣을 수 있어요.');
   out.photos = photos.map(p => {
@@ -41,6 +47,10 @@ export function validateDraft(data) {
     return { caption, image };
   });
   return out;
+}
+
+export function placeInfoRows(d) {
+  return [['주소',d.address],['영업시간',d.hours],['주차',d.parking],['주문 메뉴·가격',d.menu]].filter(([,value])=>value);
 }
 
 export function memoDraft(d) {
@@ -53,8 +63,12 @@ export function memoDraft(d) {
     titles: [`${region}${name} 방문 후기`, `${region}${name}｜직접 다녀온 솔직 후기`, `${name}, ${d.menu ? d.menu.split(/[\n,]/)[0].slice(0,25) + ' 먹고 온 이야기' : '다녀온 이야기'}`],
     intro: d.visit || `${d.companion ? d.companion + ' 함께 ' : ''}${name}에 다녀왔어요.`,
     info,
+    infoRows: placeInfoRows(d),
+    relatedUrl: d.relatedUrl || '',
+    template: d.template || 'warm',
+    pullQuote: d.highlight || '',
     sections: [...photos, ...(d.good ? [{ photoIndex: null, heading: '기억에 남았던 점', text: d.good }] : []), ...(d.bad ? [{ photoIndex: null, heading: '조금 아쉬웠던 점', text: d.bad }] : [])],
-    closing: `${name}에서의 방문 기록을 남겨봤어요 :)${d.good ? '\n\n' + d.good.split('\n')[0] : ''}`,
+    closing: `${name}에서의 이야기는 여기까지 남겨둘게요 :)`,
     hashtags: tags.map(t => '#' + t).join(' '),
     disclosure: d.disclosure,
     mode: 'memo'
@@ -64,9 +78,9 @@ export function memoDraft(d) {
 export function validateResult(r, photoCount) {
   if (!r || !Array.isArray(r.titles) || r.titles.length < 1 || !Array.isArray(r.sections)) throw new Error('AI 응답 형식을 읽지 못했어요. 다시 시도해주세요.');
   const string = (x, max = 20000) => typeof x === 'string' ? x.slice(0,max) : '';
-  const sections = r.sections.slice(0,40).map(s => ({ heading: string(s.heading,200), text: string(s.text), photoIndex: Number.isInteger(s.photoIndex) && s.photoIndex >= 0 && s.photoIndex < photoCount ? s.photoIndex : null }));
+  const sections = r.sections.slice(0,40).map(s => ({ heading: string(s.heading,200), text: string(s.text), caption: string(s.caption,160), photoIndex: Number.isInteger(s.photoIndex) && s.photoIndex >= 0 && s.photoIndex < photoCount ? s.photoIndex : null }));
   const seen = new Set();
   for (const s of sections) if (s.photoIndex !== null) { if (seen.has(s.photoIndex)) s.photoIndex = null; else seen.add(s.photoIndex); }
   for (let i=0;i<photoCount;i++) if (!seen.has(i)) sections.push({ photoIndex:i, heading:'', text:'' });
-  return { titles:r.titles.slice(0,3).map(t=>string(t,200)), intro:string(r.intro), info:string(r.info), sections, closing:string(r.closing), hashtags:string(r.hashtags,2000), mode:'ai' };
+  return { titles:r.titles.slice(0,3).map(t=>string(t,200)), intro:string(r.intro), info:string(r.info), pullQuote:string(r.pullQuote,300), sections, closing:string(r.closing), hashtags:string(r.hashtags,2000), mode:'ai' };
 }

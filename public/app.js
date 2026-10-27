@@ -1,4 +1,5 @@
 import { articleText, clipboardHtml, pngBlob, zipFiles } from './export.js';
+import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 const $ = s => document.querySelector(s);
 const form = $('#draft-form');
 let photos = [];
@@ -7,6 +8,7 @@ let outputPhotos = [];
 let busy = false;
 let toastTimer;
 let serverAi = false;
+const manualChecks = new Set();
 function toast(message, error = false) {
   $('#toast').textContent = message;
   $('#toast').className = 'toast show' + (error ? ' error' : '');
@@ -126,23 +128,34 @@ $('#sponsorship').onchange = () => {
 };
 function renderDraft(data) {
   const article = $('#article'); article.replaceChildren(); article.hidden = false; $('#empty-preview').hidden = true;
+  article.dataset.template = data.template === 'calm' ? 'calm' : 'warm';
   $('#draft-mode').textContent = data.mode === 'ai' ? 'AI 방문기' : '메모 초안';
   if (data.mode === 'memo') article.append(el('div', 'generation-warning export-ignore', '입력한 메모로 구성한 초안이에요. 사진을 분석하거나 AI로 문장을 다듬지는 않았어요. 글을 클릭해 수정해보세요.'));
   const chooser = el('div', 'title-options export-ignore'); chooser.append(el('span', '', '마음에 드는 제목을 골라보세요'));
   const heading = editable('h1', '', data.titles[0]);
   data.titles.forEach((title, i) => {
     const button = el('button', i === 0 ? 'selected' : '', title); button.type = 'button';
-    button.onclick = () => { heading.textContent = title; chooser.querySelectorAll('button').forEach(b => b.classList.remove('selected')); button.classList.add('selected'); };
+    button.onclick = () => { heading.textContent = title; chooser.querySelectorAll('button').forEach(b => b.classList.remove('selected')); button.classList.add('selected'); updateChecklist(); };
     chooser.append(button);
   });
   article.append(chooser);
   if (data.disclosure) article.append(editable('p', 'post-disclosure', data.disclosure));
   article.append(el('div', 'post-label export-ignore', 'YOUNG’S VISIT DIARY'), heading, editable('p', '', data.intro, '방문 계기를 적어주세요.'));
-  if (data.info) article.append(editable('p', 'post-info', data.info));
+  if (data.pullQuote) article.append(editable('blockquote', 'post-quote', data.pullQuote, '이날의 한 줄 감상'));
+  if (data.infoRows?.length) {
+    const table = el('table', 'post-table'); const body = el('tbody');
+    for (const [label, value] of data.infoRows) {
+      const row = el('tr'); row.append(el('th', '', label), editable('td', '', value, label + ' 수정')); body.append(row);
+    }
+    table.append(body);
+    article.append(el('hr', 'post-divider'), editable('h2', '', '방문 전에 알아두면 좋은 것들'), table, el('hr', 'post-divider'));
+  } else if (data.info) article.append(editable('p', 'post-info', data.info));
   for (const section of data.sections) {
     if (section.heading) article.append(editable('h2', '', section.heading));
     if (Number.isInteger(section.photoIndex) && outputPhotos[section.photoIndex]) {
       const img = el('img'); img.src = outputPhotos[section.photoIndex].image; img.alt = outputPhotos[section.photoIndex].caption || `방문 사진 ${section.photoIndex + 1}`; article.append(img);
+      img.addEventListener('load', updateChecklist, { once: true });
+      if (section.caption) article.append(editable('p', 'photo-caption', section.caption, '사진 한 줄 설명'));
       const actions = el('div', 'photo-export-actions export-ignore');
       const copyImage = el('button', '', '이 사진 복사'); copyImage.type = 'button';
       copyImage.onclick = async () => {
@@ -156,9 +169,47 @@ function renderDraft(data) {
     }
     article.append(editable('p', '', section.text, '이 사진에 담긴 이야기를 적어주세요.'));
   }
-  article.append(editable('h2', '', '다녀온 이야기, 마무리'), editable('p', '', data.closing), editable('p', 'post-tags', data.hashtags, '#해시태그'));
+  article.append(el('hr', 'post-divider'), editable('h2', '', data.template === 'calm' ? '짧은 총평' : '이날의 기록을 마치며'), editable('p', '', data.closing));
+  if (data.relatedUrl) {
+    const related = el('p', 'post-related'); const link = el('a', '', '함께 읽으면 좋은 방문기'); link.href = data.relatedUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; related.append(link); article.append(related);
+  }
+  article.append(editable('p', 'post-tags', data.hashtags, '#해시태그'));
   $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = outputPhotos.length === 0;
+  manualChecks.clear(); updateChecklist();
 }
+function updateChecklist() {
+  if (!draft) return;
+  const article = exportArticle();
+  const body = article.cloneNode(true); body.querySelectorAll('h1,.post-tags,.post-disclosure').forEach(node => node.remove());
+  const results = evaluateChecklist({
+    title: article.querySelector('h1')?.textContent || '', body: body.textContent,
+    photoWidths: [...$('#article').querySelectorAll('img')].map(img => img.naturalWidth),
+    links: article.querySelectorAll('.post-related a').length,
+    symbols: /[♡♥★☆✦✧→※◆▶☺✳]/u.test(article.textContent),
+    dividers: article.querySelectorAll('hr').length, quote: article.querySelector('blockquote')?.textContent || '',
+    tables: article.querySelectorAll('table').length, tags: article.querySelector('.post-tags')?.textContent || ''
+  });
+  $('#posting-checklist').hidden = false;
+  const basic = ['title', 'body', 'photos'];
+  $('#basic-count').textContent = `기본 ${basic.filter(key => results[key].done).length}/3`;
+  $('#length-status').textContent = results.body.detail + (results.body.done ? ' · 분량 기준 충족' : ' · 분량을 채우려면 실제 방문 경험을 더 적어주세요.');
+  $('#basic-checks').replaceChildren(); $('#extra-checks').replaceChildren();
+  for (const [key, label, type, help] of checklistItems) {
+    const row = el('div', 'check-row'); const title = el('span', 'check-name', label); const detail = el('small', '', help);
+    if (type === 'auto') {
+      const result = results[key]; row.classList.toggle('done', result.done);
+      const state = el('span', 'check-state', result.done ? '확인' : basic.includes(key) ? '보완' : '선택');
+      row.append(title, state, el('small', '', result.detail + ' · ' + help));
+    } else {
+      const box = el('input'); box.type = 'checkbox'; box.checked = manualChecks.has(key); box.setAttribute('aria-label', label + ' 네이버에서 확인 완료');
+      box.onchange = () => { box.checked ? manualChecks.add(key) : manualChecks.delete(key); };
+      const wrap = el('label', 'manual-check'); wrap.append(box, document.createTextNode(label)); row.append(wrap, el('span', 'check-state', '네이버에서 확인'), detail);
+    }
+    (basic.includes(key) ? $('#basic-checks') : $('#extra-checks')).append(row);
+  }
+}
+let checklistTimer;
+$('#article').addEventListener('input', () => { clearTimeout(checklistTimer); checklistTimer = setTimeout(updateChecklist, 150); });
 form.onsubmit = async event => {
   event.preventDefault();
   if (busy || importing) return;
@@ -219,6 +270,8 @@ $('#photo-zip').onclick = () => {
     bytes: Uint8Array.from(atob(img.src.split(',')[1]), c => c.charCodeAt(0))
   }));
   files.push({ name: 'blog-text.txt', bytes: new TextEncoder().encode(articleText(article, true)) });
+  files.push({ name: 'naver-guide.txt', bytes: new TextEncoder().encode([...$('.naver-guide').querySelectorAll('summary,li,p')].map(node => node.textContent).join('\n\n')) });
+  files.push({ name: 'posting-checklist.txt', bytes: new TextEncoder().encode(checklistItems.map(([, label,, help], i) => `${i + 1}. ${label}\n${help}`).join('\n\n')) });
   const blob = zipFiles(files); const url = URL.createObjectURL(blob); const a = document.createElement('a');
   a.href = url; a.download = 'youngs-blog-photos.zip'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
   toast('사진과 사진 위치가 표시된 글을 ZIP으로 저장했어요. 압축을 풀어 블로그에 사진을 업로드하세요.');
@@ -229,7 +282,7 @@ $('#download').onclick = () => {
   const doc = document.implementation.createHTMLDocument(title); doc.documentElement.lang = 'ko';
   const charset = doc.createElement('meta'); charset.setAttribute('charset', 'utf-8'); doc.head.prepend(charset);
   const viewport = doc.createElement('meta'); viewport.name = 'viewport'; viewport.content = 'width=device-width,initial-scale=1'; doc.head.append(viewport);
-  const css = doc.createElement('style'); css.textContent = 'body{max-width:760px;margin:40px auto;padding:0 22px;font-family:system-ui,sans-serif;color:#303b30;line-height:2}img{width:100%;height:auto;margin:20px 0}p{white-space:pre-wrap;overflow-wrap:anywhere}h1{font-size:26px;line-height:1.6}h2{font-size:19px}.post-info{padding:20px;background:#f3f6ed}.post-tags{color:#547448}.post-disclosure{font-size:12px;color:#777}'; doc.head.append(css);
+  const css = doc.createElement('style'); css.textContent = 'body{max-width:760px;margin:40px auto;padding:0 22px;font-family:system-ui,sans-serif;color:#303b30;line-height:2}img{width:100%;height:auto;margin:20px 0}p,blockquote{white-space:pre-wrap;overflow-wrap:anywhere}h1{font-size:26px;line-height:1.6}h2{font-size:19px;margin-top:35px}.post-info{padding:20px;background:#f3f6ed}.post-tags{color:#547448}.post-disclosure{font-size:12px;color:#777}.post-quote{margin:35px 0;padding:18px 24px;border-left:3px solid #9eae8d;background:#f8f8f3;font-size:18px}.post-divider{border:0;border-top:1px solid #dfe5d7;margin:36px auto;width:70%}.photo-caption{color:#7b8374;font-size:12px;text-align:center}[data-template=warm]>h1{text-align:center}[data-template=warm]>.post-quote{text-align:center;border-left:0;border-top:1px solid #dfe5d7;border-bottom:1px solid #dfe5d7}'; css.textContent += 'table{border-collapse:collapse;width:100%;margin:20px 0}th,td{border:1px solid #dfe5d7;padding:12px;white-space:pre-wrap;text-align:left;vertical-align:top}th{background:#f3f6ed;font-weight:600}'; doc.head.append(css);
   doc.body.append(copy);
   const blob = new Blob(['<!doctype html>\n' + doc.documentElement.outerHTML], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = title.replace(/[\\/:*?"<>|]/g, '').slice(0, 70) + '.html'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -240,6 +293,7 @@ $('#reset').onclick = () => {
   if (!confirm('입력한 내용과 사진, 작성한 초안을 모두 지울까요?')) return;
   photos = []; outputPhotos = []; draft = null; form.reset(); renderPhotos();
   $('#article').replaceChildren(); $('#article').hidden = true; $('#empty-preview').hidden = false;
+  $('#posting-checklist').hidden = true; manualChecks.clear();
   $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#copy').disabled = true; $('#download').disabled = true; $('#photo-zip').disabled = true;
   $('#draft-mode').textContent = '미리보기'; $('#photo-status').textContent = ''; $('#place-status').className = 'field-help'; $('#place-status').textContent = '가게 이름을 불러와요. 주소·영업시간·가격은 확인 후 입력해주세요.';
   document.querySelectorAll('.step').forEach((s, i) => s.classList.toggle('current', i === 0)); window.scrollTo({ top: 0, behavior: 'smooth' });

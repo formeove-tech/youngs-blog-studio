@@ -2,18 +2,36 @@ export function articleText(article, markers = false) {
   let photo = 0;
   return [...article.children].map(node => node.tagName === 'IMG'
     ? (markers ? `[사진 ${String(++photo).padStart(2, '0')}]` : '')
+    : node.tagName === 'HR' ? ''
+    : node.tagName === 'TABLE' ? [...node.rows].map(row => [...row.cells].map(cell => cell.innerText || cell.textContent).join(' : ')).join('\n')
+    : node.querySelector('a[href]') ? [...node.querySelectorAll('a[href]')].map(a => `${a.textContent}\n${a.href}`).join('\n')
+    : node.tagName === 'BLOCKQUOTE' ? `“${node.innerText || node.textContent}”`
     : (node.innerText || node.textContent)).filter(Boolean).join('\n\n');
 }
 
 export function clipboardHtml(article) {
   const copy = article.cloneNode(true);
-  copy.querySelectorAll('p').forEach(p => {
-    p.style.cssText = 'line-height:1.9;margin:14px 0;';
+  copy.querySelectorAll('p,td').forEach(p => {
+    p.style.cssText = p.tagName === 'TD' ? 'border:1px solid #dfe5d7;padding:10px 12px;font-size:13px;line-height:1.9;'
+      : p.classList.contains('photo-caption')
+      ? 'font-size:12px;line-height:1.8;text-align:center;color:#7b8374;margin:8px 0 22px;'
+      : p.classList.contains('post-info') ? 'line-height:1.9;padding:16px;background-color:#f5f7f0;border-left:2px solid #9eaf8b;margin:20px 0;'
+      : 'line-height:1.9;margin:14px 0;';
+    if (p.querySelector('a[href]')) return;
     const lines = (p.innerText || p.textContent).split('\n');
     p.replaceChildren();
     lines.forEach((line, i) => { if (i) p.append(document.createElement('br')); p.append(document.createTextNode(line)); });
   });
   copy.querySelectorAll('img').forEach(img => { img.style.cssText = 'max-width:100%;height:auto;display:block;margin:20px 0;'; });
+  copy.querySelectorAll('h1').forEach(h => { h.style.cssText = 'font-size:26px;line-height:1.6;font-weight:bold;margin:24px 0;' + (copy.dataset.template === 'warm' ? 'text-align:center;' : ''); });
+  copy.querySelectorAll('h2').forEach(h => { h.style.cssText = 'font-size:19px;line-height:1.8;font-weight:bold;margin:32px 0 14px;'; });
+  copy.querySelectorAll('blockquote').forEach(q => {
+    q.style.cssText = 'font-size:18px;line-height:1.9;padding:18px 20px;margin:30px 0;border-left:3px solid #9eae8d;color:#526449;';
+    q.textContent.split('\n').forEach((line, i) => { if (!i) q.replaceChildren(); else q.append(document.createElement('br')); q.append(document.createTextNode(line)); });
+  });
+  copy.querySelectorAll('hr').forEach(hr => { hr.style.cssText = 'border:0;border-top:1px solid #dfe5d7;margin:32px auto;width:70%;'; });
+  copy.querySelectorAll('table').forEach(table => { table.style.cssText = 'border-collapse:collapse;width:100%;margin:20px 0;border:1px solid #dfe5d7;'; });
+  copy.querySelectorAll('th').forEach(th => { th.style.cssText = 'border:1px solid #dfe5d7;padding:10px 12px;background:#f3f6ed;text-align:left;font-size:13px;font-weight:bold;'; });
   return '<!doctype html><html><body><!--StartFragment-->' + copy.innerHTML + '<!--EndFragment--></body></html>';
 }
 
