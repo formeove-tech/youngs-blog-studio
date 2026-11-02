@@ -330,3 +330,59 @@ fetch('/api/health').then(r => r.json()).then(data => {
   $('#ai-status').textContent = serverAi ? '사진 분석 + 내 말투로 작성 · 바로 사용 가능' : '운영자 연결 준비 중 · 지금은 메모 모드를 이용해주세요';
   if (serverAi) { form.querySelector('input[value="ai"]').checked = true; $('#ai-settings').hidden = false; }
 }).catch(() => { $('#ai-status').textContent = '서버 연결을 확인해주세요'; toast('서버에 연결할 수 없어요. npm start로 앱을 실행해주세요.', true); });
+
+$('#restore').onclick = () => $('#restore-file').click();
+$('#restore-file').onchange = async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    if (busy || importing) throw new Error('진행 중인 작업이 끝난 뒤 불러와주세요.');
+    if (file.size > 100 * 1024 * 1024) throw new Error('100MB 이하의 저장 파일을 선택해주세요.');
+    const saved = new DOMParser().parseFromString(await file.text(), 'text/html');
+    const source = saved.querySelector('article#article');
+    if (!source?.querySelector('h1')) throw new Error('작업실의 저장 ↓ 버튼으로 받은 HTML 파일을 선택해주세요.');
+    const restored = document.createElement('article');
+    const tags = new Set(['H1','H2','P','BLOCKQUOTE','HR','IMG','TABLE','TBODY','THEAD','TR','TD','TH','A','BR','STRONG','B','EM','I','SPAN','DIV']);
+    const classes = new Set(['post-tags','post-disclosure','post-info','post-quote','post-divider','photo-caption','post-table','post-related']);
+    function clean(node) {
+      if (node.nodeType === 3) return document.createTextNode(node.textContent);
+      if (node.nodeType !== 1 || !tags.has(node.tagName)) return null;
+      const copy = document.createElement(node.tagName.toLowerCase());
+      copy.className = [...node.classList].filter(c => classes.has(c)).join(' ');
+      if (node.tagName === 'IMG') {
+        const src = node.getAttribute('src') || '';
+        if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/i.test(src)) throw new Error('사진이 내장된 작업실 HTML 파일이 필요해요.');
+        copy.src = src; copy.alt = node.getAttribute('alt') || '저장한 방문 사진';
+      }
+      if (node.tagName === 'A') {
+        const href = node.getAttribute('href') || '';
+        if (/^https?:\/\//i.test(href)) { copy.href = href; copy.rel = 'noopener noreferrer'; copy.target = '_blank'; }
+      }
+      for (const child of node.childNodes) { const safe = clean(child); if (safe) copy.append(safe); }
+      return copy;
+    }
+    for (const child of source.childNodes) { const safe = clean(child); if (safe) restored.append(safe); }
+    if ((draft || photos.length) && !confirm('현재 작성 중인 내용을 저장한 글로 바꿀까요?')) return;
+    $('#copy-parts')?.remove();
+    const article = $('#article');
+    article.replaceChildren(...restored.childNodes);
+    article.dataset.template = source.dataset.template === 'calm' ? 'calm' : 'warm';
+    article.hidden = false; $('#empty-preview').hidden = true;
+    article.querySelectorAll('h1,h2,p,blockquote,td').forEach(node => {
+      // Use the same plain-text paste handling as newly generated articles.
+      if (node.querySelector('a')) return;
+      const replacement = editable(node.tagName.toLowerCase(), node.className, node.textContent);
+      node.replaceWith(replacement);
+    });
+    outputPhotos = [...article.querySelectorAll('img')].map(img => ({ image: img.src, caption: img.alt }));
+    photos = outputPhotos.map(p => ({ ...p }));
+    draft = { mode: 'restored' };
+    $('#draft-mode').textContent = '불러온 방문기';
+    $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = !photos.length;
+    manualChecks.clear(); renderPhotos(); updateChecklist();
+    article.querySelectorAll('img').forEach(img => img.addEventListener('load', updateChecklist, {once:true}));
+    $('#photo-status').textContent = '저장한 글의 사진을 복원했어요. 새 초안을 만들면 현재 글이 바뀝니다.';
+    toast('저장한 글과 사진을 불러왔어요. 바로 수정하거나 복사할 수 있어요.');
+  } catch (e) { toast(e.message || '저장 파일을 읽지 못했어요.', true); }
+  finally { event.target.value = ''; }
+};
