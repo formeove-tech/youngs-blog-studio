@@ -2,22 +2,22 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#f7f6f2"><title>영쓰의 블로그 작업실</title>
+  <meta name="theme-color" content="#f7f6f2"><title>블로그 작업실</title>
   <link rel="stylesheet" href="/style.css"><script src="/app.js" type="module"></script>
 </head>
 <body>
   <aside class="sidebar">
-    <a class="brand" href="/" aria-label="영쓰의 작업실 홈"><span class="brand-icon">y.</span><span>young’s<br><strong>blog studio</strong></span></a>
+    <a class="brand" href="/" aria-label="블로그 작업실 홈"><span class="brand-icon">b.</span><span>블로그<br><strong>작업실</strong></span></a>
     <div class="nav-label">MY WORKSPACE</div>
     <div class="nav-item active"><span>✎</span> 새 방문기 쓰기 <span class="nav-dot"></span></div>
-    <div class="style-card"><span class="tiny-label">나의 글쓰기 스타일</span><h3>영쓰의 방문기 <span>↗</span></h3><p>편하게 이야기하듯,<br>사진 사이로 내 경험을.</p><div class="style-tags"><span>친근한 존댓말</span><span>짧은 줄바꿈</span></div><div class="style-source">참고 글 2편 · 최근 제주 글 제외</div></div>
+    <div class="style-card"><span class="tiny-label">나의 글쓰기 스타일</span><h3>직접 다녀온 방문기 <span>↗</span></h3><p>편하게 이야기하듯,<br>사진 사이로 내 경험을.</p><div class="style-tags"><span>친근한 존댓말</span><span>짧은 줄바꿈</span></div><div class="style-source">직접 촬영한 사진 · 실제 방문 메모</div></div>
     <div class="sidebar-bottom"><span class="avatar">영</span><div><strong>영스트릿 플레이스</strong><small>나만의 블로그 작업실</small></div></div>
   </aside>
   <main>
-    <header class="topbar"><span>작업실 <span class="crumb">/</span> <strong>새 방문기</strong></span><span class="private-badge"><span></span> 사진은 내 브라우저에</span></header>
+    <header class="topbar"><span>작업실 <span class="crumb">/</span> <strong>새 방문기</strong></span><span class="private-badge"><span></span> 사진과 메모로 방문 후기</span></header>
     <div class="page-content">
-      <div class="page-heading"><div><div class="eyebrow">A LITTLE MOMENT, A GOOD STORY</div><h1>다녀온 순간을, 내 글로.</h1><p>사진과 짧은 메모를 모아 영쓰다운 방문기를 완성해요.</p></div><div class="notebook-mark">a story<br>only you can tell <span>✳</span></div></div>
-      <div class="steps"><span class="step current"><b>1</b> 사진과 방문 기록</span><span class="step-line"></span><span class="step"><b>2</b> 초안 만들기</span><span class="step-line"></span><span class="step"><b>3</b> 다듬고 가져가기</span></div>
+      <div class="page-heading"><div><div class="eyebrow">A LITTLE MOMENT, A GOOD STORY</div><h1>다녀온 순간을, 내 글로.</h1><p>직접 방문한 맛집의 사진과 메모를 모아 솔직한 후기를 완성해요.</p></div><div class="notebook-mark">a story<br>only you can tell <span>✳</span></div></div>
+      <p class="field-help">지인 사장님 5명과 무료 베타를 준비하고 있어요. 직접 방문한 경험을 입력하고, 완성된 초안은 게시 전에 확인해주세요.</p><div class="steps"><span class="step current"><b>1</b> 사진과 방문 기록</span><span class="step-line"></span><span class="step"><b>2</b> 초안 만들기</span><span class="step-line"></span><span class="step"><b>3</b> 다듬고 가져가기</span></div>
       <div class="workspace-grid">
         <section class="editor-column">
           <form id="draft-form">
@@ -36,7 +36,7 @@
               <label for="bad">조금 아쉬웠던 점 <span class="optional">선택</span></label><textarea id="bad" name="bad" rows="2" placeholder="솔직한 아쉬움이 있다면 적어주세요." maxlength="2000"></textarea>
               <details class="details"><summary>동행인 · 키워드 · 협찬 표시 <span>＋</span></summary><div class="details-content"><label for="companion">함께 간 사람</label><input id="companion" name="companion" placeholder="예: 짝꿍과 / 친구와" maxlength="100"><label for="keywords">해시태그 키워드</label><input id="keywords" name="keywords" placeholder="순천데이트, 피자, 신대지구맛집" maxlength="500"><label for="sponsorship">방문 비용</label><select id="sponsorship"><option value="none">별도 문구 없음</option><option value="self">직접 결제했어요</option><option value="sponsored">음식·제품·원고료 등을 제공받았어요</option></select><div id="disclosure-wrap" hidden><label for="disclosure">표시할 문구</label><input id="disclosure" name="disclosure" placeholder="실제 제공받은 내용을 적어주세요." maxlength="200"></div></div></details>
             </section>
-            <section class="generation-card"><div class="generation-top"><span class="spark">✳</span><div><h3>이제, 영쓰의 말투로</h3><p>방문기형 · 친근한 존댓말 · 짧은 줄바꿈</p></div></div>
+            <section class="generation-card"><div class="generation-top"><span class="spark">✳</span><div><h3>이제, 방문기 초안으로</h3><p>방문기형 · 친근한 존댓말 · 짧은 줄바꿈</p></div></div>
               <label for="template">방문기 템플릿</label>
               <select id="template" name="template"><option value="warm">소소한 하루 — 한 줄 감상과 여백이 있는 방문기</option><option value="calm">차분한 기록 — 담백한 소제목과 사진 중심 방문기</option></select>
               <p class="field-help">짧은 도입 → 한 줄 인용구 → 매장 정보 → 사진과 이야기 → 여운 있는 마무리</p>
@@ -50,12 +50,12 @@
           </form>
         </section>
         <section class="preview-column"><div class="preview-sticky"><div class="preview-toolbar"><div><span class="live-dot"></span> 내 방문기 <span id="draft-mode" class="draft-mode">미리보기</span></div><div class="preview-tools"><button id="restore" type="button">저장한 글 불러오기</button><input id="restore-file" type="file" accept=".html,.htm,text/html" hidden><button id="copy" type="button" title="사진과 글을 함께 복사" disabled>글+사진 복사</button><button id="photo-zip" type="button" title="사진과 사진 위치 표시 글을 ZIP으로 저장" disabled>사진 ZIP ↓</button><button id="download" type="button" title="사진 포함 HTML 파일 저장" disabled>저장 ↓</button></div></div>
-          <div class="paper" id="preview"><div class="empty-preview" id="empty-preview"><div class="empty-art"><span class="paper-line l1"></span><span class="paper-line l2"></span><span class="paper-line l3"></span><div class="mini-photo">✳</div><span class="pencil">✎</span></div><span class="eyebrow">YOUR NEXT STORY</span><h2>오늘의 방문기가<br>여기서 시작돼요.</h2><p>사진을 모으고, 기억을 적어보세요.<br>초안을 만든 뒤 이곳에서 바로 수정할 수 있어요.</p><div class="sample-tag">영쓰의 말투로, 차근차근 :)</div></div><article id="article" hidden></article></div>
+          <div class="paper" id="preview"><div class="empty-preview" id="empty-preview"><div class="empty-art"><span class="paper-line l1"></span><span class="paper-line l2"></span><span class="paper-line l3"></span><div class="mini-photo">✳</div><span class="pencil">✎</span></div><span class="eyebrow">YOUR NEXT STORY</span><h2>오늘의 방문기가<br>여기서 시작돼요.</h2><p>사진을 모으고, 기억을 적어보세요.<br>초안을 만든 뒤 이곳에서 바로 수정할 수 있어요.</p><div class="sample-tag">직접 다녀온 경험을, 차근차근 :)</div></div><article id="article" hidden></article></div>
           <section class="posting-checklist" id="posting-checklist" hidden><h3>스마트에디터 ONE 작성 점검 <span id="basic-count"></span></h3><p id="length-status" aria-live="polite"></p><p class="checklist-intro">기본 3항목과 선택 기능을 구분해요. 자동 점검은 초안 기준이며, 네이버에 실제로 적용됐다는 뜻은 아니에요.</p><div id="basic-checks"></div><details><summary>전체 26개 항목 보기 · 선택 기능 포함</summary><div id="extra-checks"></div></details><p class="checklist-footnote">수동 체크는 네이버에서 직접 적용·확인한 뒤 표시해주세요. 필요한 기능만 골라 쓰세요.</p></section><details class="naver-guide"><summary>네이버에서 감성 서식 마무리하기</summary><ol><li><b>인용구</b>: 한 줄 감상을 선택한 뒤 네이버의 인용구 서식을 골라주세요.</li><li><b>구분선</b>: 매장 정보와 이야기 사이, 마무리 앞에 넣으면 호흡이 생겨요.</li><li><b>소제목·강조</b>: 소제목만 굵게, 본문에서 중요한 표현만 살짝 강조해주세요.</li><li><b>사진 설명</b>: 사진 아래 짧은 캡션은 작고 옅은 글자로 정리해주세요.</li><li><b>장소</b>: 글 아래 네이버 편집기의 장소 기능으로 방문한 매장을 추가해주세요.</li></ol><p>복사는 인용문·구분선·캡션의 일반 서식을 포함해요. 네이버 전용 인용구 디자인·스티커·장소 카드는 네이버 편집기에서 직접 적용해야 해요. 붙여넣은 서식과 사진은 게시 전 확인해주세요.</p></details>
           <p class="preview-note"><span>✎</span> 초안의 글을 클릭하면 바로 수정할 수 있어요.<br>사진을 추가하거나 순서를 바꾼 뒤에는 초안을 다시 만들어주세요.<br>네이버에서 사진이 빠지면 ‘이 사진 복사’ 또는 ‘사진 ZIP’으로 업로드해주세요.</p>
         </div></section>
       </div>
-      <footer>young’s blog studio <span>기록하는 순간도, 나답게.</span><button type="button" id="reset">처음부터 새로 쓰기</button></footer>
+      <footer>블로그 작업실 <span>기록하는 순간도, 나답게.</span><button type="button" id="reset">처음부터 새로 쓰기</button></footer>
     </div>
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
