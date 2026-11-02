@@ -1,3 +1,16 @@
+
+const TONE_RULES = Object.freeze({
+  friendly: '친근한 존댓말: ~했어요, ~더라고요처럼 편하게 이야기한다. 웃음 표현과 이모지는 과하게 쓰지 않는다.',
+  calm: '담백한 기록체: ~했습니다, ~이었습니다처럼 차분한 존댓말로 쓴다. 이모지와 웃음 표현을 넣지 않는다.',
+  concise: '짧고 핵심적인 존댓말: 한 문장에 한 가지 내용만 간결하게 쓴다. 이모지와 웃음 표현을 넣지 않으며 분량을 억지로 늘리지 않는다.'
+});
+export function normalizeTone(value) {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(TONE_RULES, value) ? value : 'friendly';
+}
+export function toneInstruction(value) {
+  return '선택한 말투 규칙(앞의 예시 문체와 다르면 이 규칙을 우선): ' + TONE_RULES[normalizeTone(value)] + ' 말투만 바꾸고 사용자 입력의 사실·맛 평가·동행인·재방문 의향은 바꾸거나 추가하지 않는다.';
+}
+
 export function validatePlaceUrl(raw) {
   const url = new URL(raw);
   const hosts = ['naver.me', 'map.naver.com', 'place.naver.com', 'm.place.naver.com', 'pcmap.place.naver.com'];
@@ -33,6 +46,7 @@ export function validateDraft(data) {
   if (!out.name) throw new Error('가게 이름을 입력해주세요.');
   if (!out.good && !out.visit) throw new Error('방문 계기나 좋았던 점을 한 가지 이상 적어주세요.');
   out.template = data.template === 'calm' ? 'calm' : 'warm';
+  out.tone = normalizeTone(data.tone);
   if (out.relatedUrl) {
     let url; try { url=new URL(out.relatedUrl); } catch { throw new Error('관련 글은 네이버 블로그의 HTTPS 주소로 입력해주세요.'); }
     if(url.protocol!=='https:' || !['blog.naver.com','m.blog.naver.com'].includes(url.hostname) || url.username || url.password || (url.port && url.port!=='443')) throw new Error('관련 글은 네이버 블로그의 HTTPS 주소로 입력해주세요.');
@@ -61,14 +75,15 @@ export function memoDraft(d) {
   const tags = [...new Set([d.region && d.region.replace(/\s/g, '') + '맛집', name.replace(/[^\p{L}\p{N}]/gu, ''), ...d.keywords.split(/[,#\n]+/).map(x => x.replace(/\s/g, ''))].filter(Boolean))].slice(0, 20);
   return {
     titles: [`${region}${name} 방문 후기`, `${region}${name}｜직접 다녀온 솔직 후기`, `${name}, ${d.menu ? d.menu.split(/[\n,]/)[0].slice(0,25) + ' 먹고 온 이야기' : '다녀온 이야기'}`],
-    intro: d.visit || `${d.companion ? d.companion + ' 함께 ' : ''}${name}에 다녀왔어요.`,
+    intro: d.visit || `${d.companion ? d.companion + ' 함께 ' : ''}${name}에 ${d.tone === 'calm' ? '다녀왔습니다.' : '다녀왔어요.'}`,
     info,
     infoRows: placeInfoRows(d),
     relatedUrl: d.relatedUrl || '',
     template: d.template || 'warm',
     pullQuote: d.highlight || '',
     sections: [...photos, ...(d.good ? [{ photoIndex: null, heading: '기억에 남았던 점', text: d.good }] : []), ...(d.bad ? [{ photoIndex: null, heading: '조금 아쉬웠던 점', text: d.bad }] : [])],
-    closing: `${name}에서의 이야기는 여기까지 남겨둘게요 :)`,
+    closing: d.tone === 'calm' ? `${name} 방문 기록을 마칩니다.` : d.tone === 'concise' ? `${name} 방문 후기예요.` : `${name}에서의 이야기는 여기까지 남겨둘게요 :)`,
+    tone: normalizeTone(d.tone),
     hashtags: tags.map(t => '#' + t).join(' '),
     disclosure: d.disclosure,
     mode: 'memo'

@@ -10,8 +10,8 @@
     <a class="brand" href="/" aria-label="블로그 작업실 홈"><span class="brand-icon">b.</span><span>블로그<br><strong>작업실</strong></span></a>
     <div class="nav-label">MY WORKSPACE</div>
     <div class="nav-item active"><span>✎</span> 새 방문기 쓰기 <span class="nav-dot"></span></div>
-    <div class="style-card"><span class="tiny-label">나의 글쓰기 스타일</span><h3>직접 다녀온 방문기 <span>↗</span></h3><p>편하게 이야기하듯,<br>사진 사이로 내 경험을.</p><div class="style-tags"><span>친근한 존댓말</span><span>짧은 줄바꿈</span></div><div class="style-source">직접 촬영한 사진 · 실제 방문 메모</div></div>
-    <div class="sidebar-bottom"><span class="avatar">영</span><div><strong>영스트릿 플레이스</strong><small>나만의 블로그 작업실</small></div></div>
+    <div class="style-card"><span class="tiny-label">나의 글쓰기 스타일</span><h3>직접 다녀온 방문기 <span>↗</span></h3><p>편하게 이야기하듯,<br>사진 사이로 내 경험을.</p><div class="style-tags"><span>말투 선택 가능</span><span>사진·경험 중심</span></div><div class="style-source">직접 촬영한 사진 · 실제 방문 메모</div></div>
+    <div class="sidebar-bottom"><span class="avatar">내</span><div><strong>나의 방문 기록</strong><small>나만의 블로그 작업실</small></div></div>
   </aside>
   <main>
     <header class="topbar"><span>작업실 <span class="crumb">/</span> <strong>새 방문기</strong></span><span class="private-badge"><span></span> 사진과 메모로 방문 후기</span></header>
@@ -36,7 +36,10 @@
               <label for="bad">조금 아쉬웠던 점 <span class="optional">선택</span></label><textarea id="bad" name="bad" rows="2" placeholder="솔직한 아쉬움이 있다면 적어주세요." maxlength="2000"></textarea>
               <details class="details"><summary>동행인 · 키워드 · 협찬 표시 <span>＋</span></summary><div class="details-content"><label for="companion">함께 간 사람</label><input id="companion" name="companion" placeholder="예: 짝꿍과 / 친구와" maxlength="100"><label for="keywords">해시태그 키워드</label><input id="keywords" name="keywords" placeholder="순천데이트, 피자, 신대지구맛집" maxlength="500"><label for="sponsorship">방문 비용</label><select id="sponsorship"><option value="none">별도 문구 없음</option><option value="self">직접 결제했어요</option><option value="sponsored">음식·제품·원고료 등을 제공받았어요</option></select><div id="disclosure-wrap" hidden><label for="disclosure">표시할 문구</label><input id="disclosure" name="disclosure" placeholder="실제 제공받은 내용을 적어주세요." maxlength="200"></div></div></details>
             </section>
-            <section class="generation-card"><div class="generation-top"><span class="spark">✳</span><div><h3>이제, 방문기 초안으로</h3><p>방문기형 · 친근한 존댓말 · 짧은 줄바꿈</p></div></div>
+            <section class="generation-card"><div class="generation-top"><span class="spark">✳</span><div><h3>이제, 방문기 초안으로</h3><p>직접 방문한 후기 · 말투 선택 · 짧은 줄바꿈</p></div></div>
+              <label for="tone">후기 말투</label>
+              <select id="tone" name="tone"><option value="friendly">친근한 존댓말 — 편하게 이야기하듯</option><option value="calm">담백한 기록체 — 차분하고 정돈되게</option><option value="concise">짧고 핵심적으로 — 간결한 존댓말</option></select>
+              <p class="field-help">AI 작성은 선택한 말투로 다듬어요. 메모 모드는 직접 적은 문장을 유지하고 자동 안내 문장에만 선택을 적용해요. 사진 배치 템플릿은 아래에서 별도로 선택할 수 있어요.</p>
               <label for="template">방문기 템플릿</label>
               <select id="template" name="template"><option value="warm">소소한 하루 — 한 줄 감상과 여백이 있는 방문기</option><option value="calm">차분한 기록 — 담백한 소제목과 사진 중심 방문기</option></select>
               <p class="field-help">짧은 도입 → 한 줄 인용구 → 매장 정보 → 사진과 이야기 → 여운 있는 마무리</p>
