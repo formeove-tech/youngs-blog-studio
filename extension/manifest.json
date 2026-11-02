@@ -1,1 +1,22 @@
-{"manifest_version":3,"name":"영쓰 네이버 작성 도우미","version":"0.1.0","description":"영쓰 글과 사진을 크롬에 보관하고 네이버 편집기에 입력합니다. 실제 편집기 검증이 필요한 시험판입니다.","permissions":["activeTab","scripting","storage","unlimitedStorage"],"host_permissions":["https://youngs-blog-studio.onrender.com/*","https://blog.naver.com/*"],"action":{"default_popup":"popup.html"},"background":{"service_worker":"background.js"}}
+{
+  "manifest_version": 3,
+  "name": "영쓰 네이버 작성 도우미",
+  "version": "0.1.1",
+  "description": "영쓰 글과 사진을 크롬에 보관하고 네이버 편집기에 입력합니다. 실제 편집기 검증이 필요한 시험판입니다.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://youngs-blog-studio.onrender.com/*",
+    "https://blog.naver.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

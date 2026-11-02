@@ -3,19 +3,24 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
  (async()=>{
   const tab=await chrome.tabs.get(message.tabId);const url=new URL(tab.url);
   if(message.action==='capture'){
-   if(url.origin!=='https://youngs-blog-studio.onrender.com')throw Error('영스에서 완성한 글을 연 뒤 실행하세요.');
-   const [{result}]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>{
-    const article=document.querySelector('#article');if(!article||article.hidden)throw Error('완성한 글이 없습니다.');
-    const title=article.querySelector('h1')?.innerText.trim();if(!title)throw Error('제목이 없습니다.');
-    const blocks=[];
-    for(const n of article.children){if(n.matches('.export-ignore,h1'))continue;
-     if(n.tagName==='IMG'){if(!/^data:image\/(jpeg|png|webp);base64,/i.test(n.src))throw Error('사진 데이터 형식을 확인해주세요.');blocks.push({type:'image',src:n.src,alt:n.alt});}
-     else if(n.tagName==='HR')blocks.push({type:'divider',text:'──────────'});
-     else {let text=n.innerText?.trim()||'';if(n.tagName==='TABLE')text=[...n.rows].map(r=>[...r.cells].map(c=>c.innerText).join(' : ')).join('\n');if(n.querySelector('a[href]'))text+='\n'+n.querySelector('a').href;if(text)blocks.push({type:n.tagName==='H2'?'heading':n.tagName==='BLOCKQUOTE'?'quote':'text',text});}
-    }
-    return {version:1,title,blocks,capturedAt:Date.now()};
+   let target = tab;
+   if(url.origin !== 'https://youngs-blog-studio.onrender.com') {
+    const studios = await chrome.tabs.query({url:'https://youngs-blog-studio.onrender.com/*'});
+    if(studios.length !== 1) throw Error(studios.length ? '영스 탭이 여러 개예요. 가져올 글이 있는 영스 탭에서 눌러주세요.' : '영스 사이트를 열어주세요. 또는 아래 ‘저장한 HTML에서 가져오기’를 이용하세요.');
+    target = studios[0];
+   }
+   await chrome.scripting.executeScript({target:{tabId:target.id},files:['capture.js']});
+   const results = await chrome.scripting.executeScript({target:{tabId:target.id},func:async()=>{
+    try {
+     const packet = globalThis.youngsExtractArticle(document);
+     // Do not send photo-heavy data back through the script result/message channel.
+     await chrome.storage.local.set({packet,status:{running:false,message:'글과 사진을 가져왔어요. 네이버에서 새 빈 글을 열어주세요.'}});
+     return {ok:true,title:packet.title,photos:packet.blocks.filter(b=>b.type==='image').length};
+    } catch(e) { return {ok:false,error:e.message || '글을 읽지 못했어요.'}; }
    }});
-   await chrome.storage.local.set({packet:result,status:{message:'글과 사진을 가져왔어요. 네이버에서 새 빈 글을 열어주세요.'}});return {};
+   const result = results[0]?.result;
+   if(!result?.ok) throw Error(result?.error || '영스 화면에 연결하지 못했어요. 영스 탭을 새로 열거나 저장한 HTML에서 가져와주세요.');
+   return {ok:true,title:result.title,photos:result.photos};
   }
   if(url.hostname!=='blog.naver.com')throw Error('네이버 블로그의 새 글쓰기 화면에서 실행하세요.');
   await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},files:['runner.js']});
@@ -32,5 +37,5 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   // Detached from the popup: closing it does not cancel the page-side task.
   chrome.scripting.executeScript({target:{tabId:tab.id,frameIds:[match[0].frameId]},func:(p,publish)=>{globalThis.youngsRunner.run(p,publish);},args:[packet,!!message.publish]}).catch(async e=>{await chrome.storage.local.set({status:{running:false,message:e.message}});});
   return {};
- })().then(reply).catch(e=>reply({error:e.message}));return true;
+ })().then(reply).catch(async e=>{ const error=e.message || '작업에 실패했어요.'; await chrome.storage.local.set({status:{running:false,message:error}}); reply({error}); });return true;
 });

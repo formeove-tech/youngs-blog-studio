@@ -30,7 +30,7 @@
   await until(()=>[...document.querySelectorAll('.se-component.se-image img')].filter(visible).every(img=>img.complete&&img.naturalWidth>0),30000);
   const target=lastBody();if(target.innerText.trim())throw Error('사진 다음의 빈 문단을 확인하지 못했어요.');
  }
- function report(){return {version:'0.1.0',path:location.pathname,editorFound:!!title(),bodyEditableCount:bodies().length,editables:[...document.querySelectorAll('[contenteditable]')].map(n=>({tag:n.tagName,classes:n.className,editable:n.getAttribute('contenteditable')})).slice(0,60),buttons:buttons().map(n=>({label:label(n).slice(0,60),classes:n.className})).slice(0,120),fileInputs:[...document.querySelectorAll('input[type="file"]')].map(n=>({accept:n.accept,multiple:n.multiple})),imageComponents:document.querySelectorAll('.se-component.se-image').length};}
+ function report(){return {version:'0.1.1',path:location.pathname,editorFound:!!title(),bodyEditableCount:bodies().length,editables:[...document.querySelectorAll('[contenteditable]')].map(n=>({tag:n.tagName,classes:n.className,editable:n.getAttribute('contenteditable')})).slice(0,60),buttons:buttons().map(n=>({label:label(n).slice(0,60),classes:n.className})).slice(0,120),fileInputs:[...document.querySelectorAll('input[type="file"]')].map(n=>({accept:n.accept,multiple:n.multiple})),imageComponents:document.querySelectorAll('.se-component.se-image').length};}
  async function run(packet,publish){if(running)return;running=true;stopped=false;try{
   if(publish)throw Error('이 시험판은 실제 네이버 작성·사진·서식 검증 전이라 자동 발행을 잠가두었어요. 먼저 발행 옵션을 끄고 초안을 시험해주세요.');
   if(!packet?.title||!Array.isArray(packet.blocks))throw Error('가져온 글 형식이 올바르지 않아요.');
