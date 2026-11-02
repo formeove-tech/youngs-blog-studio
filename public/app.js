@@ -1,4 +1,4 @@
-import { articleText, clipboardHtml, pngBlob, zipFiles } from './export.js';
+import { articleText, clipboardHtml, pngBlob, zipFiles, splitClipboardArticle } from './export.js';
 import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 const $ = s => document.querySelector(s);
 const form = $('#draft-form');
@@ -127,6 +127,7 @@ $('#sponsorship').onchange = () => {
   $('#disclosure').value = choice === 'self' ? '직접 결제하고 다녀온 후기입니다.' : '';
 };
 function renderDraft(data) {
+  $('#copy-parts')?.remove();
   const article = $('#article'); article.replaceChildren(); article.hidden = false; $('#empty-preview').hidden = true;
   article.dataset.template = data.template === 'calm' ? 'calm' : 'warm';
   $('#draft-mode').textContent = data.mode === 'ai' ? 'AI 방문기' : '메모 초안';
@@ -209,7 +210,7 @@ function updateChecklist() {
   }
 }
 let checklistTimer;
-$('#article').addEventListener('input', () => { clearTimeout(checklistTimer); checklistTimer = setTimeout(updateChecklist, 150); });
+$('#article').addEventListener('input', () => { $('#copy-parts')?.remove(); clearTimeout(checklistTimer); checklistTimer = setTimeout(updateChecklist, 150); });
 form.onsubmit = async event => {
   event.preventDefault();
   if (busy || importing) return;
@@ -247,21 +248,46 @@ function exportArticle() {
   copy.querySelectorAll('[contenteditable]').forEach(n => { n.removeAttribute('contenteditable'); n.removeAttribute('role'); n.removeAttribute('aria-label'); n.removeAttribute('data-placeholder'); });
   return copy;
 }
-$('#copy').onclick = async () => {
-  const copy = exportArticle();
-  const text = articleText(copy);
-  try {
-    if (navigator.clipboard?.write && window.ClipboardItem) {
-      await navigator.clipboard.write([new ClipboardItem({
-        'text/html': new Blob([clipboardHtml(copy)], { type: 'text/html' }),
-        'text/plain': new Blob([text], { type: 'text/plain' })
-      })]);
-      toast(copy.querySelector('img') ? '글과 사진을 함께 복사했어요. 사진이 빠지면 사진별 복사나 사진 ZIP 업로드를 이용해주세요.' : '글을 복사했어요.');
-    } else {
-      await navigator.clipboard.writeText(text); toast('이 브라우저에서는 글만 복사돼요. 사진은 ZIP으로 저장해 업로드해주세요.');
-    }
+function showCopyParts(parts) {
+  let panel = $('#copy-parts');
+  if (!panel) {
+    panel = el('div', 'card'); panel.id = 'copy-parts';
+    panel.setAttribute('aria-live', 'polite');
+    $('.preview-toolbar').after(panel);
   }
-  catch { toast('복사 권한이 없어요. 글을 직접 선택하거나 저장 기능을 이용해주세요.', true); }
+  panel.replaceChildren(el('p', '', `사진을 포함한 글을 ${parts.length}개로 나눴어요. 아래 순서대로 복사해 네이버 본문 끝에 붙여넣으세요. 사진이 빠지면 사진 ZIP으로 업로드해주세요.`));
+  parts.forEach((part, i) => {
+    const button = el('button', '', `${i + 1}/${parts.length} 복사 · ${(new Blob([clipboardHtml(part)]).size / 1_000_000).toFixed(2)}MB`);
+    button.type = 'button';
+    button.onclick = () => writeArticleClipboard(part).then(() => {
+      button.textContent = `${i + 1}/${parts.length} 복사됨 · 네이버에 붙여넣으세요`;
+    }).catch(e => toast(e.message, true));
+    panel.append(button);
+  });
+}
+async function writeArticleClipboard(copy) {
+  if (navigator.clipboard?.write && window.ClipboardItem) {
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([clipboardHtml(copy)], { type: 'text/html' }),
+      'text/plain': new Blob([articleText(copy)], { type: 'text/plain' })
+    })]);
+    toast('글과 사진을 복사했어요. 네이버에 붙여넣은 뒤 사진이 들어갔는지 확인해주세요.');
+  } else {
+    await navigator.clipboard.writeText(articleText(copy));
+    toast('이 브라우저에서는 글만 복사돼요. 사진 ZIP으로 업로드해주세요.');
+  }
+}
+$('#copy').onclick = async () => {
+  try {
+    const parts = splitClipboardArticle(exportArticle());
+    if (parts.length > 1) {
+      showCopyParts(parts);
+      toast(`복사 용량이 커서 ${parts.length}개로 나눴어요. 순서대로 복사해주세요.`);
+      return;
+    }
+    $('#copy-parts')?.remove();
+    if (parts.length) await writeArticleClipboard(parts[0]);
+  } catch (e) { toast(e.message || '복사에 실패했어요. 사진 ZIP 저장을 이용해주세요.', true); }
 };
 $('#photo-zip').onclick = () => {
   const article = exportArticle();
