@@ -65,3 +65,24 @@ export function zipFiles(files) {
   view.setUint32(0, 0x06054b50, true); view.setUint16(8, files.length, true); view.setUint16(10, files.length, true); view.setUint32(12, centralSize, true); view.setUint32(16, offset, true);
   return new Blob([...local, ...central, end], { type: 'application/zip' });
 }
+
+
+// Leave headroom for clipboard wrappers and editor bookkeeping.
+export const NAVER_COPY_BUDGET = 4_000_000;
+export function splitClipboardArticle(article, maxBytes = NAVER_COPY_BUDGET) {
+  const parts = [];
+  let part = article.cloneNode(false);
+  const size = node => new Blob([clipboardHtml(node)]).size;
+  for (const child of article.children) {
+    part.append(child.cloneNode(true));
+    if (size(part) <= maxBytes) continue;
+    const last = part.lastElementChild;
+    last.remove();
+    if (part.children.length) parts.push(part);
+    part = article.cloneNode(false);
+    part.append(last);
+    if (size(part) > maxBytes) throw new Error('사진 한 장 또는 문단 하나가 복사 한도를 넘어요. 사진 ZIP으로 업로드하거나 긴 문단을 나눠주세요.');
+  }
+  if (part.children.length) parts.push(part);
+  return parts;
+}
