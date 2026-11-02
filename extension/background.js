@@ -6,7 +6,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
    let target = tab;
    if(url.origin !== 'https://youngs-blog-studio.onrender.com') {
     const studios = await chrome.tabs.query({url:'https://youngs-blog-studio.onrender.com/*'});
-    if(studios.length !== 1) throw Error(studios.length ? '영스 탭이 여러 개예요. 가져올 글이 있는 영스 탭에서 눌러주세요.' : '영스 사이트를 열어주세요. 또는 아래 ‘저장한 HTML에서 가져오기’를 이용하세요.');
+    if(studios.length !== 1) throw Error(studios.length ? '블로그 작업실 탭이 여러 개예요. 가져올 글이 있는 블로그 작업실 탭에서 눌러주세요.' : '블로그 작업실 사이트를 열어주세요. 또는 아래 ‘저장한 HTML에서 가져오기’를 이용하세요.');
     target = studios[0];
    }
    await chrome.scripting.executeScript({target:{tabId:target.id},files:['capture.js']});
@@ -19,7 +19,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
     } catch(e) { return {ok:false,error:e.message || '글을 읽지 못했어요.'}; }
    }});
    const result = results[0]?.result;
-   if(!result?.ok) throw Error(result?.error || '영스 화면에 연결하지 못했어요. 영스 탭을 새로 열거나 저장한 HTML에서 가져와주세요.');
+   if(!result?.ok) throw Error(result?.error || '블로그 작업실 화면에 연결하지 못했어요. 블로그 작업실 탭을 새로 열거나 저장한 HTML에서 가져와주세요.');
    return {ok:true,title:result.title,photos:result.photos};
   }
   if(url.hostname!=='blog.naver.com')throw Error('네이버 블로그의 새 글쓰기 화면에서 실행하세요.');
@@ -29,7 +29,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   }
   if(message.action==='stop'){await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>{globalThis.youngsRunner.stop();}});return {};}
   if(message.action!=='write')throw Error('지원하지 않는 작업입니다.');
-  const {packet,status}=await chrome.storage.local.get(['packet','status']);if(!packet)throw Error('영스 글을 먼저 가져오세요.');
+  const {packet,status}=await chrome.storage.local.get(['packet','status']);if(!packet)throw Error('블로그 작업실 글을 먼저 가져오세요.');
   if(status?.running)throw Error('작성 중입니다. 완료되거나 중지될 때까지 기다려주세요.');
   const frames=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>globalThis.youngsRunner.probe()});
   const match=frames.filter(f=>f.result);if(match.length!==1)throw Error('편집기를 정확히 찾지 못했어요. 진단 파일을 저장해 전달해주세요.');

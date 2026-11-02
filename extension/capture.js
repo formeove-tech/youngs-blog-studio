@@ -1,7 +1,7 @@
 // Runs only in the extension popup or the explicitly selected Studio tab.
 globalThis.youngsExtractArticle = function (root) {
   const article = root.querySelector('article#article');
-  if (!article || article.hidden) throw Error('완성한 글이 없습니다. 영스에서 초안을 만들거나 저장한 HTML을 불러온 뒤 다시 눌러주세요.');
+  if (!article || article.hidden) throw Error('완성한 글이 없습니다. 블로그 작업실에서 초안을 만들거나 저장한 HTML을 불러온 뒤 다시 눌러주세요.');
   const text = node => (node?.innerText || node?.textContent || '').trim();
   const title = text(article.querySelector('h1'));
   if (!title) throw Error('완성한 글에서 제목을 찾지 못했어요.');
@@ -12,7 +12,7 @@ globalThis.youngsExtractArticle = function (root) {
     if (node.tagName === 'IMG') {
       const src = node.getAttribute('src') || '';
       if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/i.test(src))
-        throw Error(`${imageCount + 1}번 사진이 파일에 포함되지 않았어요. 영스의 ‘저장 ↓’으로 받은 HTML을 사용해주세요.`);
+        throw Error(`${imageCount + 1}번 사진이 파일에 포함되지 않았어요. 블로그 작업실의 ‘저장 ↓’으로 받은 HTML을 사용해주세요.`);
       blocks.push({type:'image', src, alt:node.getAttribute('alt') || ''}); imageCount++;
     } else if (node.tagName === 'HR') blocks.push({type:'divider', text:'──────────'});
     else {

@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s);
 let working=false;
 async function refresh(){
  const {packet,status}=await chrome.storage.local.get(['packet','status']);
- $('#summary').textContent=packet?`${packet.title}\n사진 ${packet.blocks.filter(b=>b.type==='image').length}장`:'영스 글을 가져오거나 저장한 HTML을 선택해주세요.';
+ $('#summary').textContent=packet?`${packet.title}\n사진 ${packet.blocks.filter(b=>b.type==='image').length}장`:'블로그 작업실 글을 가져오거나 저장한 HTML을 선택해주세요.';
  if(!working) $('#status').textContent=status?.message||'';
 }
 async function failed(error){const message=error?.message||String(error);await chrome.storage.local.set({status:{running:false,message}});$('#status').textContent=message;}
