@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "블로그 작업실 — 맛집 후기 도우미",
+  "version": "0.1.1",
+  "description": "직접 방문한 맛집의 글과 사진을 가져와 네이버 편집기 입력을 돕는 시험판입니다.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://youngs-blog-studio.onrender.com/*",
+    "https://blog.naver.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
