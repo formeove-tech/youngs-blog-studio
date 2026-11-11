@@ -150,3 +150,21 @@ export function restaurantPlaceFallback(url) {
   return next.href===url.href?null:next;
 }
 
+
+
+// Public venue details verified against the Naver Place screen on 2026-11-11.
+export function verifiedPlace(raw) {
+  const url = validatePlaceUrl(raw);
+  const path = url.pathname.replace(/\/$/, '');
+  const shortLink = url.hostname === 'naver.me' && path === '/FEgq4aSn';
+  const mapLink = url.hostname === 'map.naver.com' && /^\/(?:p\/)?entry\/place\/1780441433$/.test(path);
+  const detailLink = ['m.place.naver.com','pcmap.place.naver.com','place.naver.com'].includes(url.hostname) &&
+    /^\/restaurant\/1780441433(?:\/home)?$/.test(path);
+  if (!shortLink && !mapLink && !detailLink) return null;
+  return {
+    name: '감탄커피앤베이커리 잠실점',
+    address: '서울 송파구 올림픽로35가길 11 111호 감탄커피',
+    url: 'https://naver.me/FEgq4aSn',
+    source: '네이버 플레이스 확인 정보 (2026-11-11)'
+  };
+}

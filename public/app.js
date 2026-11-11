@@ -203,17 +203,19 @@ $('#apply-place-text').onclick = () => {
     $('#place-status').textContent = e.message;
   }
 };
-$('#fetch-place').onclick = async () => {
+let placeRequest = 0;
+async function lookupPlace() {
   const url = $('#place-url').value.trim();
   if (!url) return toast('플레이스 주소를 먼저 넣어주세요.', true);
+  const request = ++placeRequest;
   const button = $('#fetch-place'); button.disabled = true; button.textContent = '확인 중…';
   $('#place-status').textContent = '네이버에서 가게 이름을 확인하고 있어요…';
   try {
     const result = await api('/api/place', { url });
-    if ($('#place-url').value.trim() !== url) return;
+    if (request !== placeRequest || $('#place-url').value.trim() !== url) return;
     applyImportedPlace(result);
   } catch (e) {
-    $('#place-image').open = true;
+    if (request !== placeRequest || $('#place-url').value.trim() !== url) return;
     $('#place-status').className = 'field-help error';
     $('#place-status').replaceChildren(document.createTextNode(e.message + ' '));
     try {
@@ -222,8 +224,16 @@ $('#fetch-place').onclick = async () => {
         const open = el('a', '', '네이버 플레이스 열기 ↗'); open.href = link.href; open.target = '_blank'; open.rel = 'noopener noreferrer'; $('#place-status').append(open);
       }
     } catch {}
-  } finally { button.disabled = false; button.textContent = '불러오기 ↗'; }
-};
+  } finally { if (request === placeRequest) { button.disabled = false; button.textContent = '불러오기 ↗'; } }
+}
+$('#fetch-place').onclick = lookupPlace;
+$('#place-url').addEventListener('paste', () => setTimeout(() => {
+  try {
+    const url = new URL($('#place-url').value.trim());
+    if (url.protocol === 'https:' && !url.username && !url.password &&
+        ['naver.me','map.naver.com','place.naver.com','pcmap.place.naver.com','m.place.naver.com'].includes(url.hostname)) lookupPlace();
+  } catch {}
+}, 0));
 form.addEventListener('change', event => {
   if (event.target.name === 'mode') $('#ai-settings').hidden = event.target.value !== 'ai';
 });

@@ -32,6 +32,13 @@ test('공유 서버는 사용자 키를 무시하고 서버 키를 사용하며 
   const health=await (await fetch(base+'/api/health')).json();assert.equal(health.aiConfigured,true);assert.equal(Object.keys(health).length,2);
   const r=await fetch(base+'/api/generate',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://studio.example.com'},body:JSON.stringify({name:'테스트',visit:'방문했어요.',mode:'ai',apiKey:'test-client-key-ignored'})});
   assert.equal(r.status,200);const text=await r.text();assert.doesNotMatch(text,/test-server-only-key|test-client-key-ignored/);assert.equal(JSON.parse(text).mode,'ai');
+  const place=await fetch(base+'/api/place',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:'https://naver.me/FEgq4aSn'})});
+  assert.equal(place.status,200);
+  const venue=await place.json();
+  assert.equal(venue.name,'감탄커피앤베이커리 잠실점');
+  assert.match(venue.address,/올림픽로35가길 11/);
+  const unknown=await fetch(base+'/api/place',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:'https://naver.me/another'})});
+  assert.notEqual(unknown.status,200);
   const screenshot=await fetch(base+'/api/place-image',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://studio.example.com'},body:JSON.stringify({image:'data:image/png;base64,AA=='})});
   assert.equal(screenshot.status,200);
   assert.deepEqual(await screenshot.json(),{name:'캡처 가게',address:'확인된 주소',hours:'',parking:''});

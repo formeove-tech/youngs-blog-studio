@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { validatePlaceUrl, validateDraft, validateResult, memoDraft, createAiLimiter, placeInfoRows, toneInstruction, placeNameFromHtml, restaurantPlaceFallback } from './lib.mjs';
+import { validatePlaceUrl, validateDraft, validateResult, memoDraft, createAiLimiter, placeInfoRows, toneInstruction, placeNameFromHtml, restaurantPlaceFallback, verifiedPlace } from './lib.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 // Use the host's configured proxy and trust settings when present.
@@ -20,6 +20,8 @@ async function body(req) {
 }
 async function place(raw) {
   let url = validatePlaceUrl(raw);
+  const known = verifiedPlace(url.href);
+  if (known) return known;
   const controller = new AbortController();
   const timer=setTimeout(()=>controller.abort(),15000);
   try {
@@ -33,6 +35,8 @@ async function place(raw) {
         await response.body?.cancel();
         if(!target) break;
         url=validatePlaceUrl(new URL(target,url).href);
+        const match=verifiedPlace(url.href);
+        if(match) return match;
         continue;
       }
       if(!response.ok){
