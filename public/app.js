@@ -3,6 +3,8 @@ import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 const $ = s => document.querySelector(s);
 const form = $('#draft-form');
 const placeHelp = '네이버 지도 공유 링크를 붙여넣으세요. 같은 위치에 등록된 매장이 있으면 선택할 수 있어요.';
+const newPlaceKey = 'youngs:next-place:';
+let appliedPlace = null;
 let photos = [];
 let draft = null;
 let outputPhotos = [];
@@ -131,12 +133,20 @@ function applyImportedPlace(result) {
     throw new Error('네이버 플레이스 주소만 가져올 수 있어요.');
   const article = $('#article');
   const table = draft ? article.querySelector(':scope > .post-table') : null;
-  const oldName = [...(table?.rows || [])].find(row => row.cells[0]?.textContent === '가게 이름')?.cells[1]?.textContent.trim();
-  if ([oldName, $('#name').value.trim()].some(value => value && value !== name))
-    throw new Error('작성 중인 가게와 불러온 가게 이름이 달라서 반영하지 않았어요.');
+  const tableValue = label => [...(table?.rows || [])].find(row => row.cells[0]?.textContent === label)?.cells[1]?.textContent.trim();
+  const otherName = [tableValue('가게 이름'), $('#name').value.trim()].find(value => value && value.replace(/\s+/g, '') !== name.replace(/\s+/g, ''));
+  if (otherName) {
+    // A new link must not become the old draft's link if the author continues writing there.
+    $('#place-url').value = tableValue('네이버 플레이스') || (appliedPlace?.name === otherName ? appliedPlace.url : '');
+    showPlaceConflict(otherName, { ...result, name, url: url?.href || '' });
+    return false;
+  }
   $('#name').value ||= name;
   if (!$('#region').value.trim() && typeof result.region === 'string') $('#region').value = result.region.trim().slice(0, 100);
-  if (url) $('#place-url').value = url.href;
+  if (url) {
+    $('#place-url').value = url.href;
+    appliedPlace = { name, url: url.href };
+  }
   const rows = [['가게 이름', name]];
   for (const [key, label] of [['address','주소'],['hours','영업시간'],['parking','주차']]) {
     const field = $('#' + key);
@@ -163,6 +173,7 @@ function applyImportedPlace(result) {
   $('#place-status').className = 'field-help';
   clearPlaceOptions();
   $('#place-status').textContent = draft ? name + ' · 매장 정보를 현재 글에 반영했어요.' : name + ' · 글을 만들 때 매장 정보에 자동으로 들어가요.';
+  return true;
 }
 $('#read-place-image').onclick = async () => {
   const picker = $('#place-image-file');
@@ -181,8 +192,7 @@ $('#read-place-image').onclick = async () => {
       $('#place-status').textContent = '작성 중인 가게 정보가 바뀌었어요. 캡처 읽기를 다시 눌러주세요.';
       return;
     }
-    applyImportedPlace({...result,url});
-    $('#place-status').textContent += ' 캡처에서 읽은 주소와 영업시간은 게시 전에 확인해주세요.';
+    if (applyImportedPlace({...result,url})) $('#place-status').textContent += ' 캡처에서 읽은 주소와 영업시간은 게시 전에 확인해주세요.';
   } catch (e) {
     $('#place-status').className = 'field-help error';
     $('#place-status').textContent = e.message;
@@ -211,6 +221,66 @@ function clearPlaceOptions() {
   const list = $('#place-options');
   list.hidden = true;
   list.replaceChildren();
+}
+function showPlaceConflict(currentName, nextPlace) {
+  clearPlaceOptions();
+  $('#place-status').className = 'field-help';
+  $('#place-status').textContent = currentName + ' 글은 이 탭에 그대로 있어요.';
+  const target = new URL(location.pathname, location.origin);
+  const params = new URLSearchParams();
+  if (nextPlace.url) params.set('place', nextPlace.url);
+  target.hash = params.toString();
+  const open = el('a', 'place-open-new', '새 글에서 이 매장 쓰기 ↗');
+  open.href = target.href;
+  open.target = '_blank';
+  open.rel = 'noopener noreferrer';
+  open.onclick = () => {
+    try {
+      const id = crypto.randomUUID();
+      const key = newPlaceKey + id;
+      const expires = Date.now() + 120_000;
+      localStorage.setItem(key, JSON.stringify({ place: nextPlace, expires }));
+      const handoff = new URL(target);
+      const route = new URLSearchParams(target.hash.slice(1));
+      route.set('new-place', id);
+      handoff.hash = route.toString();
+      open.href = handoff.href;
+      setTimeout(() => {
+        try { localStorage.removeItem(key); } catch {}
+        if (open.href === handoff.href) open.href = target.href;
+      }, 120_000);
+    } catch {
+      // If storage is disabled, the new tab can look up its place link directly.
+      open.href = target.href;
+    }
+  };
+  const card = el('div', 'place-conflict');
+  card.append(el('strong', '', nextPlace.name));
+  if (nextPlace.address) card.append(el('span', '', nextPlace.address));
+  card.append(open);
+  const list = $('#place-options');
+  list.append(card);
+  list.hidden = false;
+}
+function openPlaceFromHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const id = params.get('new-place');
+  const link = params.get('place');
+  if (!id && !link) return;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  if (id && /^[\da-f-]{36}$/i.test(id)) {
+    try {
+      const key = newPlaceKey + id;
+      const stored = localStorage.getItem(key);
+      localStorage.removeItem(key);
+      const pending = JSON.parse(stored);
+      if (pending?.expires > Date.now() && applyImportedPlace(pending.place)) return;
+    } catch {}
+  }
+  if (link && link.length <= 2048) {
+    $('#place-url').value = link;
+    lookupPlace();
+  }
 }
 function showPlaceOptions(result, request, url) {
   const list = $('#place-options');
@@ -461,7 +531,7 @@ $('#download').onclick = () => {
 $('#reset').onclick = () => {
   if (busy || importing) return toast('진행 중인 작업이 끝나면 다시 시도해주세요.');
   if (!confirm('입력한 내용과 사진, 작성한 초안을 모두 지울까요?')) return;
-  photos = []; outputPhotos = []; draft = null; form.reset(); renderPhotos();
+  photos = []; outputPhotos = []; draft = null; appliedPlace = null; form.reset(); renderPhotos();
   $('#article').replaceChildren(); $('#article').hidden = true; $('#empty-preview').hidden = false;
   $('#posting-checklist').hidden = true; manualChecks.clear();
   $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#copy-naver').disabled = true; $('#add-divider').disabled = true; $('#add-draft-photo').disabled = true; $('#draft-edit-status').textContent = ''; $('#copy').disabled = true; $('#download').disabled = true; $('#photo-zip').disabled = true;
@@ -603,4 +673,6 @@ $('#copy-naver').onclick = async () => {
     $('#draft-edit-status').textContent = '복사가 제한됐어요. 사진 ZIP 안의 blog-text.txt를 열어 본문을 복사해주세요.';
   }
 };
+
+openPlaceFromHash();
 
