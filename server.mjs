@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { validatePlaceUrl, validateDraft, validateResult, memoDraft, createAiLimiter, placeInfoRows, toneInstruction } from './lib.mjs';
+import { validatePlaceUrl, validateDraft, validateResult, memoDraft, createAiLimiter, placeInfoRows, toneInstruction, placeNameFromHtml, restaurantPlaceFallback } from './lib.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 // Use the host's configured proxy and trust settings when present.
@@ -18,34 +18,40 @@ async function body(req) {
   for await (const chunk of req) { size += chunk.length; if(size > 30_000_000) { const e=new Error('사진 용량이 너무 큽니다. 장수를 줄여주세요.'); e.status=413; throw e; } chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString()); } catch { throw new Error('입력 데이터를 읽지 못했어요.'); }
 }
-const decode = s => s.replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
 async function place(raw) {
   let url = validatePlaceUrl(raw);
-  const controller = new AbortController(); const timer=setTimeout(()=>controller.abort(),15000);
+  const controller = new AbortController();
+  const timer=setTimeout(()=>controller.abort(),15000);
   try {
-    let response;
-    for (let i=0;i<6;i++) {
-      response=await fetch(url, {redirect:'manual',signal:controller.signal,headers:{'User-Agent':'Mozilla/5.0'}});
-      if ([301,302,303,307,308].includes(response.status)) {
+    const seen=new Set();
+    for(let i=0;i<8;i++){
+      if(seen.has(url.href)) break;
+      seen.add(url.href);
+      const response=await fetch(url,{redirect:'manual',signal:controller.signal,headers:{'User-Agent':'Mozilla/5.0'}});
+      if([301,302,303,307,308].includes(response.status)){
         const target=response.headers.get('location');
-        if (!target) throw new Error('주소 이동 정보를 읽지 못했어요.');
-        url=validatePlaceUrl(new URL(target,url).href); continue;
+        await response.body?.cancel();
+        if(!target) break;
+        url=validatePlaceUrl(new URL(target,url).href);
+        continue;
       }
-      break;
+      if(!response.ok){
+        await response.body?.cancel();
+        throw new Error('네이버 장소 페이지에 연결하지 못했어요. 주소를 새 탭에서 확인하거나 가게 이름을 직접 적어주세요.');
+      }
+      let html=''; const decoder=new TextDecoder();
+      for await(const chunk of response.body){
+        html+=decoder.decode(chunk,{stream:true});
+        if(html.length>4_000_000) throw new Error('장소 페이지가 너무 큽니다.');
+      }
+      html+=decoder.decode();
+      const name=placeNameFromHtml(html);
+      if(name) return {name,url:url.href,source:'네이버 페이지 공개 정보'};
+      const fallback=restaurantPlaceFallback(url);
+      if(!fallback) break;
+      url=fallback;
     }
-    if (!response.ok) throw new Error('네이버가 장소 정보 요청을 허용하지 않았어요. 가게 정보를 직접 입력할 수 있어요.');
-    if (Number(response.headers.get('content-length')) > 4_000_000) throw new Error('장소 페이지가 너무 큽니다.');
-    let html=''; const decoder=new TextDecoder();
-    for await (const chunk of response.body) { html+=decoder.decode(chunk,{stream:true}); if(html.length>4_000_000) throw new Error('장소 페이지가 너무 큽니다.'); }
-    html+=decoder.decode();
-    const metas={};
-    for (const m of html.matchAll(/<meta\b[^>]*>/gi)) {
-      const a={}; for (const v of m[0].matchAll(/([\w:-]+)\s*=\s*["']([^"']*)["']/g)) a[v[1].toLowerCase()]=decode(v[2]);
-      if(a.property || a.name) metas[a.property || a.name]=a.content || '';
-    }
-    const name=(metas['og:title'] || '').replace(/\s*[:|｜-]\s*네이버.*$/,'').trim();
-    if (!name || /네이버 지도|NAVER|네이버 플레이스|접근|오류/i.test(name)) throw new Error('가게 이름을 자동으로 확인하지 못했어요. 가게 정보를 직접 입력해주세요.');
-    return {name, url:url.href, description:metas['og:description'] || '', source:'네이버 페이지 공개 메타 정보'};
+    throw new Error('네이버 페이지에서 가게 이름을 찾지 못했어요. 가게 상세 화면의 공유 주소로 다시 시도하거나 이름을 직접 적어주세요.');
   } finally { clearTimeout(timer); }
 }
 const server=http.createServer(async(req,res)=>{
@@ -107,3 +113,4 @@ for (const signal of ['SIGINT','SIGTERM']) process.on(signal,()=>{
   setTimeout(()=>process.exit(0),2000).unref();
 });
 server.listen(port,host,()=>console.log(`블로그 작업실 실행 중 (포트 ${port})`));
+

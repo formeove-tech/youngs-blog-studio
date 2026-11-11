@@ -64,7 +64,7 @@ function renderPhotos() {
   });
 }
 async function imageData(file) {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('JPG, PNG, WEBP 사진을 넣어주세요.');
+  if (!/\.(jpe?g|png|webp)$/i.test(file.name) && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('JPG, PNG, WEBP 사진을 넣어주세요. HEIC는 JPG로 변환한 뒤 추가해주세요.');
   if (file.size > 20 * 1024 * 1024) throw new Error('장당 20MB 이하의 사진을 넣어주세요.');
   const objectUrl = URL.createObjectURL(file);
   try {
@@ -79,14 +79,32 @@ async function imageData(file) {
 let importing = false;
 async function addPhotos(files) {
   if (importing || busy) return toast('진행 중인 작업이 끝나면 사진을 추가해주세요.');
-  if (photos.length + files.length > 20) return toast('사진은 최대 20장까지 넣을 수 있어요.', true);
-  importing = true; $('#photo-status').textContent = '사진을 준비하고 있어요…'; $('#generate').disabled = true;
-  let count = 0;
-  for (const file of files) {
-    try { photos.push({ image: await imageData(file), caption: '' }); count++; } catch (e) { toast(e.message, true); }
+  if (!files.length) return;
+  importing = true;
+  const generate = $('#generate');
+  generate.disabled = true;
+  try {
+    const { added, errors } = await readPhotos(files, 20 - photos.length);
+    photos.push(...added);
+    renderPhotos();
+    $('#photo-status').textContent = photoSummary(added, errors);
+  } finally {
+    importing = false;
+    generate.disabled = false;
+    $('#photos').value = '';
   }
-  importing = false; $('#generate').disabled = false; $('#photo-status').textContent = count ? `${count}장 추가했어요. 사진 설명을 적고, 화살표로 순서를 바꿔보세요.` : '';
-  renderPhotos(); $('#photos').value = '';
+}
+async function readPhotos(files, slots) {
+  const added = [], errors = [];
+  for (const file of files) {
+    if (added.length >= slots) { errors.push('사진은 최대 20장까지 등록할 수 있어요.'); break; }
+    try { added.push({ image: await imageData(file), caption: '' }); }
+    catch (e) { errors.push(file.name + ': ' + (e.message || '사진을 읽을 수 없어요.')); }
+  }
+  return { added, errors };
+}
+function photoSummary(added, errors) {
+  return [added.length ? `${added.length}장 추가했어요.` : '', ...errors].filter(Boolean).join(' ');
 }
 $('#photos').onchange = event => addPhotos([...event.target.files]);
 for (const name of ['dragenter', 'dragover']) $('#dropzone').addEventListener(name, event => { event.preventDefault(); $('#dropzone').classList.add('dragging'); });
@@ -109,13 +127,20 @@ $('#fetch-place').onclick = async () => {
   $('#place-status').textContent = '네이버에서 가게 이름을 확인하고 있어요…';
   try {
     const result = await api('/api/place', { url });
+    if ($('#place-url').value.trim() !== url) return;
     if (!$('#name').value.trim()) $('#name').value = result.name;
     $('#place-status').className = 'field-help';
     $('#place-status').textContent = `${result.name} · ${result.source}. 가게 이름과 나머지 정보를 확인해주세요.`;
     toast('가게 이름을 확인했어요.');
   } catch (e) {
     $('#place-status').className = 'field-help error';
-    $('#place-status').textContent = e.message + ' 주소·영업시간·주차·메뉴를 직접 입력해도 글을 만들 수 있어요.';
+    $('#place-status').replaceChildren(document.createTextNode(e.message + ' '));
+    try {
+      const link = new URL(url);
+      if (link.protocol === 'https:' && !link.username && !link.password && ['naver.me','map.naver.com','m.place.naver.com','place.naver.com','pcmap.place.naver.com'].includes(link.hostname)) {
+        const open = el('a', '', '네이버 플레이스 열기 ↗'); open.href = link.href; open.target = '_blank'; open.rel = 'noopener noreferrer'; $('#place-status').append(open);
+      }
+    } catch {}
   } finally { button.disabled = false; button.textContent = '불러오기 ↗'; }
 };
 form.addEventListener('change', event => {
@@ -157,16 +182,7 @@ function renderDraft(data) {
       const img = el('img'); img.src = outputPhotos[section.photoIndex].image; img.alt = outputPhotos[section.photoIndex].caption || `방문 사진 ${section.photoIndex + 1}`; article.append(img);
       img.addEventListener('load', updateChecklist, { once: true });
       if (section.caption) article.append(editable('p', 'photo-caption', section.caption, '사진 한 줄 설명'));
-      const actions = el('div', 'photo-export-actions export-ignore');
-      const copyImage = el('button', '', '이 사진 복사'); copyImage.type = 'button';
-      copyImage.onclick = async () => {
-        if (!navigator.clipboard?.write || !window.ClipboardItem) return toast('이 브라우저는 사진 복사를 지원하지 않아요. 사진 ZIP을 저장해 블로그에 업로드해주세요.', true);
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob(img.src) })]);
-          toast('사진 한 장을 복사했어요. 블로그 본문의 원하는 위치에서 붙여넣어보세요.');
-        } catch { toast('사진 복사가 제한됐어요. 사진 ZIP을 저장해 블로그에 업로드해주세요.', true); }
-      };
-      actions.append(copyImage); article.append(actions);
+      article.append(photoActions(img));
     }
     article.append(editable('p', '', section.text, '이 사진에 담긴 이야기를 적어주세요.'));
   }
@@ -175,7 +191,7 @@ function renderDraft(data) {
     const related = el('p', 'post-related'); const link = el('a', '', '함께 읽으면 좋은 방문기'); link.href = data.relatedUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; related.append(link); article.append(related);
   }
   article.append(editable('p', 'post-tags', data.hashtags, '#해시태그'));
-  $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = outputPhotos.length === 0;
+  $('#copy-naver').disabled = false; $('#add-divider').disabled = false; $('#add-draft-photo').disabled = false; $('#draft-edit-status').textContent = ''; $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = outputPhotos.length === 0;
   manualChecks.clear(); updateChecklist();
 }
 function updateChecklist() {
@@ -271,7 +287,7 @@ async function writeArticleClipboard(copy) {
       'text/html': new Blob([clipboardHtml(copy)], { type: 'text/html' }),
       'text/plain': new Blob([articleText(copy)], { type: 'text/plain' })
     })]);
-    toast('글과 사진을 복사했어요. 네이버에 붙여넣은 뒤 사진이 들어갔는지 확인해주세요.');
+    toast('복사했어요. 네이버에서 사진이 빠지면 사진 ZIP을 받아 사진 메뉴로 첨부해주세요.');
   } else {
     await navigator.clipboard.writeText(articleText(copy));
     toast('이 브라우저에서는 글만 복사돼요. 사진 ZIP으로 업로드해주세요.');
@@ -292,7 +308,7 @@ $('#copy').onclick = async () => {
 $('#photo-zip').onclick = () => {
   const article = exportArticle();
   const files = [...article.querySelectorAll('img')].map((img, i) => ({
-    name: `${String(i + 1).padStart(2, '0')}.jpg`,
+    name: `${String(i + 1).padStart(2, '0')}.${img.src.startsWith('data:image/png;') ? 'png' : img.src.startsWith('data:image/webp;') ? 'webp' : 'jpg'}`,
     bytes: Uint8Array.from(atob(img.src.split(',')[1]), c => c.charCodeAt(0))
   }));
   files.push({ name: 'blog-text.txt', bytes: new TextEncoder().encode(articleText(article, true)) });
@@ -320,7 +336,7 @@ $('#reset').onclick = () => {
   photos = []; outputPhotos = []; draft = null; form.reset(); renderPhotos();
   $('#article').replaceChildren(); $('#article').hidden = true; $('#empty-preview').hidden = false;
   $('#posting-checklist').hidden = true; manualChecks.clear();
-  $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#copy').disabled = true; $('#download').disabled = true; $('#photo-zip').disabled = true;
+  $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#copy-naver').disabled = true; $('#add-divider').disabled = true; $('#add-draft-photo').disabled = true; $('#draft-edit-status').textContent = ''; $('#copy').disabled = true; $('#download').disabled = true; $('#photo-zip').disabled = true;
   $('#draft-mode').textContent = '미리보기'; $('#photo-status').textContent = ''; $('#place-status').className = 'field-help'; $('#place-status').textContent = '가게 이름을 불러와요. 주소·영업시간·가격은 확인 후 입력해주세요.';
   document.querySelectorAll('.step').forEach((s, i) => s.classList.toggle('current', i === 0)); window.scrollTo({ top: 0, behavior: 'smooth' });
 };
@@ -378,7 +394,7 @@ $('#restore-file').onchange = async event => {
     photos = outputPhotos.map(p => ({ ...p }));
     draft = { mode: 'restored' };
     $('#draft-mode').textContent = '불러온 방문기';
-    $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = !photos.length;
+    $('#copy-naver').disabled = false; $('#add-divider').disabled = false; $('#add-draft-photo').disabled = false; $('#draft-edit-status').textContent = ''; $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = !photos.length;
     manualChecks.clear(); renderPhotos(); updateChecklist();
     article.querySelectorAll('img').forEach(img => img.addEventListener('load', updateChecklist, {once:true}));
     $('#photo-status').textContent = '저장한 글의 사진을 복원했어요. 새 초안을 만들면 현재 글이 바뀝니다.';
@@ -386,3 +402,76 @@ $('#restore-file').onchange = async event => {
   } catch (e) { toast(e.message || '저장 파일을 읽지 못했어요.', true); }
   finally { event.target.value = ''; }
 };
+
+function photoActions(img) {
+  const actions = el('div', 'photo-export-actions export-ignore');
+  const copyImage = el('button', '', '이 사진 복사'); copyImage.type = 'button';
+  copyImage.onclick = async () => {
+    if (!navigator.clipboard?.write || !window.ClipboardItem) return toast('이 브라우저는 사진 복사를 지원하지 않아요. 사진 ZIP을 저장해 블로그에 업로드해주세요.', true);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob(img.src) })]);
+      toast('사진 한 장을 복사했어요. 블로그 본문의 원하는 위치에서 붙여넣어보세요.');
+    } catch { toast('사진 복사가 제한됐어요. 사진 ZIP을 저장해 블로그에 업로드해주세요.', true); }
+  };
+
+  actions.append(copyImage);
+  return actions;
+}
+const previewArticle = $('#article');
+let insertAnchor = null;
+let photoAnchor = null;
+previewArticle.addEventListener('focusin', event => {
+  let node = event.target;
+  while (node && node.parentElement !== previewArticle) node = node.parentElement;
+  if (node && !node.classList.contains('export-ignore')) insertAnchor = node;
+});
+function placeInDraft(anchor, ...nodes) {
+  if (anchor?.parentElement === previewArticle && !anchor.matches('h1,.post-tags')) anchor.after(...nodes);
+  else {
+    const tags = previewArticle.querySelector('.post-tags');
+    if (tags) tags.before(...nodes); else previewArticle.append(...nodes);
+  }
+  insertAnchor = nodes.at(-1);
+  $('#copy-parts')?.remove();
+  $('#photo-zip').disabled = !previewArticle.querySelector('img');
+  updateChecklist();
+}
+$('#add-divider').onclick = () => {
+  if (!draft || busy || importing) return;
+  placeInDraft(insertAnchor, el('hr', 'post-divider'));
+  $('#draft-edit-status').textContent = '구분선을 추가했어요.';
+};
+$('#add-draft-photo').onclick = () => {
+  if (!draft || busy || importing) return;
+  photoAnchor = insertAnchor;
+  $('#draft-photo-file').click();
+};
+$('#draft-photo-file').onchange = async event => {
+  const files = [...event.target.files];
+  event.target.value = '';
+  if (!files.length || !draft || busy || importing) return;
+  importing = true;
+  $('#draft-edit-status').textContent = '사진을 준비하고 있어요…';
+  try {
+    const { added, errors } = await readPhotos(files, 20 - previewArticle.querySelectorAll('img').length);
+    const nodes = added.flatMap(p => {
+      const img = el('img'); img.alt = '추가한 방문 사진';
+      img.addEventListener('load', updateChecklist, { once: true });
+      img.src = p.image;
+      return [img, photoActions(img)];
+    });
+    if (nodes.length) placeInDraft(photoAnchor, ...nodes);
+    $('#draft-edit-status').textContent = photoSummary(added, errors);
+  } finally { importing = false; }
+};
+
+$('#copy-naver').onclick = async () => {
+  if (!draft) return;
+  try {
+    await navigator.clipboard.writeText(articleText(exportArticle(), true));
+    $('#draft-edit-status').textContent = '본문을 복사했어요. 네이버에 붙여넣고, 사진 ZIP의 번호에 맞춰 사진을 첨부하세요.';
+  } catch {
+    $('#draft-edit-status').textContent = '복사가 제한됐어요. 사진 ZIP 안의 blog-text.txt를 열어 본문을 복사해주세요.';
+  }
+};
+

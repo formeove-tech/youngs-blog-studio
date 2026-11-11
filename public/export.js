@@ -1,8 +1,9 @@
+const DIVIDER_TEXT = '──────────';
 export function articleText(article, markers = false) {
   let photo = 0;
   return [...article.children].map(node => node.tagName === 'IMG'
     ? (markers ? `[사진 ${String(++photo).padStart(2, '0')}]` : '')
-    : node.tagName === 'HR' ? ''
+    : node.tagName === 'HR' ? DIVIDER_TEXT
     : node.tagName === 'TABLE' ? [...node.rows].map(row => [...row.cells].map(cell => cell.innerText || cell.textContent).join(' : ')).join('\n')
     : node.querySelector('a[href]') ? [...node.querySelectorAll('a[href]')].map(a => `${a.textContent}\n${a.href}`).join('\n')
     : node.tagName === 'BLOCKQUOTE' ? `“${node.innerText || node.textContent}”`
@@ -29,7 +30,7 @@ export function clipboardHtml(article) {
     q.style.cssText = 'font-size:18px;line-height:1.9;padding:18px 20px;margin:30px 0;border-left:3px solid #9eae8d;color:#526449;';
     q.textContent.split('\n').forEach((line, i) => { if (!i) q.replaceChildren(); else q.append(document.createElement('br')); q.append(document.createTextNode(line)); });
   });
-  copy.querySelectorAll('hr').forEach(hr => { hr.style.cssText = 'border:0;border-top:1px solid #dfe5d7;margin:32px auto;width:70%;'; });
+  copy.querySelectorAll('hr').forEach(hr => { const line = document.createElement('p'); line.textContent = DIVIDER_TEXT; line.style.cssText = 'text-align:center;color:#526449;margin:24px 0;'; hr.replaceWith(line); });
   copy.querySelectorAll('table').forEach(table => { table.style.cssText = 'border-collapse:collapse;width:100%;margin:20px 0;border:1px solid #dfe5d7;'; });
   copy.querySelectorAll('th').forEach(th => { th.style.cssText = 'border:1px solid #dfe5d7;padding:10px 12px;background:#f3f6ed;text-align:left;font-size:13px;font-weight:bold;'; });
   return '<!doctype html><html><body><!--StartFragment-->' + copy.innerHTML + '<!--EndFragment--></body></html>';
