@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node --use-env-proxy --env-file-if-exists=.env server.mjs", "test": "node --test tests/*.test.mjs" },
+  "scripts": {
+    "start": "node --use-env-proxy --env-file-if-exists=.env server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "posttest": "node scripts/prepare-place-index.mjs",
+    "place:index": "python3 scripts/build-place-index.py"
+  },
   "engines": { "node": ">=24.5" }
 }
+

@@ -2,7 +2,8 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { validatePlaceUrl, validateDraft, validateResult, memoDraft, createAiLimiter, placeInfoRows, toneInstruction, placeNameFromHtml, restaurantPlaceFallback, verifiedPlace } from './lib.mjs';
+import { validateDraft, validateResult, memoDraft, createAiLimiter, placeInfoRows, toneInstruction } from './lib.mjs';
+import { createPlaceLookup, openShopIndex } from './place-lookup.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 // Use the host's configured proxy and trust settings when present.
@@ -12,51 +13,12 @@ const host = process.env.HOST || '127.0.0.1';
 const apiKey = () => process.env.BLOG_WRITER_API_KEY || process.env.OPENAI_API_KEY;
 const aiLimiter=createAiLimiter({dailyLimit:Number(process.env.AI_DAILY_LIMIT)||100});
 const profile = await readFile(path.join(root, 'style-profile.md'), 'utf8');
+const place = createPlaceLookup({findNearby: openShopIndex(path.join(root, 'data', 'place-index.sqlite'))});
 const send = (res, status, data) => { res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff' }); res.end(JSON.stringify(data)); };
 async function body(req) {
   const chunks=[]; let size=0;
   for await (const chunk of req) { size += chunk.length; if(size > 30_000_000) { const e=new Error('사진 용량이 너무 큽니다. 장수를 줄여주세요.'); e.status=413; throw e; } chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString()); } catch { throw new Error('입력 데이터를 읽지 못했어요.'); }
-}
-async function place(raw) {
-  let url = validatePlaceUrl(raw);
-  const known = verifiedPlace(url.href);
-  if (known) return known;
-  const controller = new AbortController();
-  const timer=setTimeout(()=>controller.abort(),15000);
-  try {
-    const seen=new Set();
-    for(let i=0;i<8;i++){
-      if(seen.has(url.href)) break;
-      seen.add(url.href);
-      const response=await fetch(url,{redirect:'manual',signal:controller.signal,headers:{'User-Agent':'Mozilla/5.0'}});
-      if([301,302,303,307,308].includes(response.status)){
-        const target=response.headers.get('location');
-        await response.body?.cancel();
-        if(!target) break;
-        url=validatePlaceUrl(new URL(target,url).href);
-        const match=verifiedPlace(url.href);
-        if(match) return match;
-        continue;
-      }
-      if(!response.ok){
-        await response.body?.cancel();
-        throw new Error('네이버 장소 페이지에 연결하지 못했어요. 주소를 새 탭에서 확인하거나 가게 이름을 직접 적어주세요.');
-      }
-      let html=''; const decoder=new TextDecoder();
-      for await(const chunk of response.body){
-        html+=decoder.decode(chunk,{stream:true});
-        if(html.length>4_000_000) throw new Error('장소 페이지가 너무 큽니다.');
-      }
-      html+=decoder.decode();
-      const name=placeNameFromHtml(html);
-      if(name) return {name,url:url.href,source:'네이버 페이지 공개 정보'};
-      const fallback=restaurantPlaceFallback(url);
-      if(!fallback) break;
-      url=fallback;
-    }
-    throw new Error('네이버 페이지에서 가게 이름을 찾지 못했어요. 가게 상세 화면의 공유 주소로 다시 시도하거나 이름을 직접 적어주세요.');
-  } finally { clearTimeout(timer); }
 }
 const server=http.createServer(async(req,res)=>{
   try {

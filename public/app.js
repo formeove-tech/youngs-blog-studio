@@ -2,6 +2,7 @@ import { articleText, clipboardHtml, pngBlob, zipFiles, splitClipboardArticle } 
 import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 const $ = s => document.querySelector(s);
 const form = $('#draft-form');
+const placeHelp = '네이버 지도 공유 링크를 붙여넣으세요. 같은 위치에 등록된 매장이 있으면 선택할 수 있어요.';
 let photos = [];
 let draft = null;
 let outputPhotos = [];
@@ -134,6 +135,7 @@ function applyImportedPlace(result) {
   if ([oldName, $('#name').value.trim()].some(value => value && value !== name))
     throw new Error('작성 중인 가게와 불러온 가게 이름이 달라서 반영하지 않았어요.');
   $('#name').value ||= name;
+  if (!$('#region').value.trim() && typeof result.region === 'string') $('#region').value = result.region.trim().slice(0, 100);
   if (url) $('#place-url').value = url.href;
   const rows = [['가게 이름', name]];
   for (const [key, label] of [['address','주소'],['hours','영업시간'],['parking','주차']]) {
@@ -159,6 +161,7 @@ function applyImportedPlace(result) {
     updateChecklist();
   }
   $('#place-status').className = 'field-help';
+  clearPlaceOptions();
   $('#place-status').textContent = draft ? name + ' · 매장 정보를 현재 글에 반영했어요.' : name + ' · 글을 만들 때 매장 정보에 자동으로 들어가요.';
 }
 $('#read-place-image').onclick = async () => {
@@ -204,16 +207,45 @@ $('#apply-place-text').onclick = () => {
   }
 };
 let placeRequest = 0;
+function clearPlaceOptions() {
+  const list = $('#place-options');
+  list.hidden = true;
+  list.replaceChildren();
+}
+function showPlaceOptions(result, request, url) {
+  const list = $('#place-options');
+  $('#place-status').textContent = '링크 근처에 등록된 매장이에요. 다녀온 매장을 선택하면 이름과 주소가 글에 들어가요.';
+  for (const candidate of result.candidates) {
+    const option = el('button', 'place-option');
+    option.type = 'button';
+    option.append(el('strong', '', candidate.name), el('span', '', candidate.address));
+    option.onclick = () => {
+      if (request !== placeRequest || $('#place-url').value.trim() !== url) return;
+      try {
+        applyImportedPlace({ ...candidate, url: result.url });
+      } catch (error) {
+        $('#place-status').className = 'field-help error';
+        $('#place-status').textContent = error.message;
+      }
+    };
+    list.append(option);
+  }
+  list.append(el('p', 'field-help', '출처: ' + result.source + ' · 이름은 인허가 기록 기준이에요.'));
+  list.hidden = false;
+}
 async function lookupPlace() {
   const url = $('#place-url').value.trim();
   if (!url) return toast('플레이스 주소를 먼저 넣어주세요.', true);
   const request = ++placeRequest;
   const button = $('#fetch-place'); button.disabled = true; button.textContent = '확인 중…';
-  $('#place-status').textContent = '네이버에서 가게 이름을 확인하고 있어요…';
+  clearPlaceOptions();
+  $('#place-status').className = 'field-help';
+  $('#place-status').textContent = '공유 링크에 있는 위치를 확인하고 있어요…';
   try {
     const result = await api('/api/place', { url });
     if (request !== placeRequest || $('#place-url').value.trim() !== url) return;
-    applyImportedPlace(result);
+    if (result.candidates?.length) showPlaceOptions(result, request, url);
+    else applyImportedPlace(result);
   } catch (e) {
     if (request !== placeRequest || $('#place-url').value.trim() !== url) return;
     $('#place-status').className = 'field-help error';
@@ -227,6 +259,11 @@ async function lookupPlace() {
   } finally { if (request === placeRequest) { button.disabled = false; button.textContent = '불러오기 ↗'; } }
 }
 $('#fetch-place').onclick = lookupPlace;
+$('#place-url').addEventListener('input', () => {
+  clearPlaceOptions();
+  $('#place-status').className = 'field-help';
+  $('#place-status').textContent = placeHelp;
+});
 $('#place-url').addEventListener('paste', () => setTimeout(() => {
   try {
     const url = new URL($('#place-url').value.trim());
@@ -428,7 +465,8 @@ $('#reset').onclick = () => {
   $('#article').replaceChildren(); $('#article').hidden = true; $('#empty-preview').hidden = false;
   $('#posting-checklist').hidden = true; manualChecks.clear();
   $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#copy-naver').disabled = true; $('#add-divider').disabled = true; $('#add-draft-photo').disabled = true; $('#draft-edit-status').textContent = ''; $('#copy').disabled = true; $('#download').disabled = true; $('#photo-zip').disabled = true;
-  $('#draft-mode').textContent = '미리보기'; $('#photo-status').textContent = ''; $('#place-status').className = 'field-help'; $('#place-status').textContent = '가게 이름을 불러와요. 주소·영업시간·가격은 확인 후 입력해주세요.';
+  clearPlaceOptions();
+  $('#draft-mode').textContent = '미리보기'; $('#photo-status').textContent = ''; $('#place-status').className = 'field-help'; $('#place-status').textContent = placeHelp;
   document.querySelectorAll('.step').forEach((s, i) => s.classList.toggle('current', i === 0)); window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 window.addEventListener('beforeunload', event => { if (photos.length || draft || $('#name').value || $('#visit').value || $('#good').value) { event.preventDefault(); event.returnValue = ''; } });

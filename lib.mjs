@@ -102,56 +102,6 @@ export function validateResult(r, photoCount) {
   return { titles:r.titles.slice(0,3).map(t=>string(t,200)), intro:string(r.intro), info:string(r.info), pullQuote:string(r.pullQuote,300), sections, closing:string(r.closing), hashtags:string(r.hashtags,2000), mode:'ai' };
 }
 
-function decodePlaceText(value) {
-  const entities={amp:'&',quot:'"',apos:"'",lt:'<',gt:'>',nbsp:' '};
-  return value.replace(/&(#x[\da-f]+|#\d+|amp|quot|apos|lt|gt|nbsp);/gi,(entity,key)=>{
-    if(key.startsWith('#')){
-      const n=key[1].toLowerCase()==='x'?parseInt(key.slice(2),16):Number(key.slice(1));
-      return n>0&&n<=0x10ffff?String.fromCodePoint(n):entity;
-    }
-    return entities[key.toLowerCase()]??entity;
-  }).replace(/\s+/g,' ').trim();
-}
-export function placeNameFromHtml(html) {
-  const clean=value=>{
-    const name=decodePlaceText(value).replace(/\s*[:|｜-]\s*(?:네이버(?:\s*(?:지도|플레이스))?|NAVER)\s*$/i,'').trim();
-    return name && name.length<=100 && !/^(?:네이버(?:\s*(?:지도|플레이스|맵))?|NAVER(?:\s*MAP)?|지도|플레이스)$/i.test(name) &&
-      !/접근이 제한|페이지를 찾을 수 없|서비스 오류|Access Denied|Forbidden|Not Found/i.test(name) ? name : '';
-  };
-  const attrs=tag=>Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>\x60]+))/g)].map(m=>[m[1].toLowerCase(),m[2]??m[3]??m[4]]));
-  const meta=new Map();
-  for(const [tag] of html.matchAll(/<meta\b[^>]*>/gi)){
-    const a=attrs(tag); if(a.content)meta.set((a.property||a.name||'').toLowerCase(),a.content);
-  }
-  for(const key of ['og:title','twitter:title']){
-    const name=clean(meta.get(key)||''); if(name)return name;
-  }
-  const names=new Set();
-  for(const match of html.matchAll(/(<script\b[^>]*>)([\s\S]*?)<\/script\s*>/gi)){
-    if(attrs(match[1]).type!=='application/ld+json')continue;
-    let data;try{data=JSON.parse(match[2]);}catch{continue;}
-    const roots=Array.isArray(data)?data:[data];
-    for(const root of roots.flatMap(x=>[x,...(Array.isArray(x?.['@graph'])?x['@graph']:[])])){
-      const types=[root?.['@type']].flat();
-      if(types.some(t=>typeof t==='string'&&/^(?:https?:\/\/schema\.org\/)?(?:Restaurant|CafeOrCoffeeShop|Bakery|FoodEstablishment|BarOrPub)$/i.test(t))&&typeof root.name==='string'){
-        const name=clean(root.name); if(name)names.add(name);
-      }
-    }
-  }
-  if(names.size===1)return [...names][0];
-  const title=html.match(/<title\b[^>]*>([^<]+)<\/title\s*>/i)?.[1]||'';
-  return /[:|｜-]\s*(?:네이버(?:\s*(?:지도|플레이스))?|NAVER)\s*$/i.test(title)?clean(title):'';
-}
-export function restaurantPlaceFallback(url) {
-  if(!['map.naver.com','pcmap.place.naver.com','place.naver.com','m.place.naver.com'].includes(url.hostname))return null;
-  const id=url.pathname.match(/(?:^|\/)(?:place|restaurant)\/(\d+)(?:\/|$)/)?.[1];
-  if(!id)return null;
-  const next=new URL('https://m.place.naver.com/restaurant/'+id+'/home');
-  return next.href===url.href?null:next;
-}
-
-
-
 // Public venue details verified against the Naver Place screen on 2026-11-11.
 export function verifiedPlace(raw) {
   const url = validatePlaceUrl(raw);
