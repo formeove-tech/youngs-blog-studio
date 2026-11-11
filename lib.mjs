@@ -64,7 +64,9 @@ export function validateDraft(data) {
 }
 
 export function placeInfoRows(d) {
-  return [['주소',d.address],['영업시간',d.hours],['주차',d.parking],['주문 메뉴·가격',d.menu]].filter(([,value])=>value);
+  let url='';
+  if(d.url) try { url=validatePlaceUrl(d.url).href; } catch {}
+  return [['가게 이름',d.name],['주소',d.address],['영업시간',d.hours],['주차',d.parking],['주문 메뉴·가격',d.menu],['네이버 플레이스',url]].filter(([,value])=>value);
 }
 
 export function memoDraft(d) {

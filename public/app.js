@@ -120,6 +120,65 @@ async function api(url, data) {
   if (!response.ok) throw new Error(result.error || '요청에 실패했어요.');
   return result;
 }
+function applyImportedPlace(result) {
+  if (busy || importing) throw new Error('글 작성이나 사진 등록이 끝난 뒤 다시 불러와 주세요.');
+  const name = typeof result?.name === 'string' ? result.name.trim().slice(0, 100) : '';
+  if (!name) throw new Error('가게 이름을 확인하지 못했어요.');
+  const url = new URL(result.url);
+  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') ||
+    !['naver.me','map.naver.com','place.naver.com','m.place.naver.com','pcmap.place.naver.com'].includes(url.hostname))
+    throw new Error('네이버 플레이스 주소만 가져올 수 있어요.');
+  const article = $('#article');
+  const table = draft ? article.querySelector(':scope > .post-table') : null;
+  const oldName = [...(table?.rows || [])].find(row => row.cells[0]?.textContent === '가게 이름')?.cells[1]?.textContent.trim();
+  if ([oldName, $('#name').value.trim()].some(value => value && value !== name))
+    throw new Error('작성 중인 가게와 불러온 가게 이름이 달라서 반영하지 않았어요.');
+  $('#name').value ||= name;
+  $('#place-url').value = url.href;
+  const rows = [['가게 이름', name]];
+  for (const [key, label] of [['address','주소'],['hours','영업시간'],['parking','주차']]) {
+    const field = $('#' + key);
+    const value = typeof result[key] === 'string' ? result[key].trim().slice(0, 500) : '';
+    if (!field.value.trim() && value) field.value = value;
+    if (field.value.trim()) rows.push([label, field.value.trim()]);
+  }
+  rows.push(['네이버 플레이스', url.href]);
+  if (draft) {
+    const existing = table || el('table', 'post-table');
+    if (!table) article.querySelector('h1').after(el('h2', '', '매장 정보'), existing);
+    const body = existing.tBodies[0] || existing.createTBody();
+    for (const [label, value] of rows) {
+      const row = [...existing.rows].find(row => row.cells[0]?.textContent === label);
+      if (row) {
+        if (row.cells[1] && !row.cells[1].textContent.trim()) row.cells[1].textContent = value;
+      } else {
+        const next = el('tr'); next.append(el('th', '', label), editable('td', '', value, label + ' 수정')); body.append(next);
+      }
+    }
+    $('#copy-parts')?.remove();
+    updateChecklist();
+  }
+  $('#place-status').className = 'field-help';
+  $('#place-status').textContent = draft ? name + ' · 매장 정보를 현재 글에 반영했어요.' : name + ' · 글을 만들 때 매장 정보에 자동으로 들어가요.';
+}
+$('#apply-place-text').onclick = () => {
+  try {
+    const info = {};
+    const fields = new Map([['가게 이름','name'],['주소','address'],['영업시간','hours'],['주차','parking'],['네이버 플레이스','url']]);
+    const lines = $('#place-text').value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      const labeled = line.match(/^([^:：]+)[:：]\s*(.+)$/);
+      if (labeled && fields.has(labeled[1].trim())) info[fields.get(labeled[1].trim())] = labeled[2].trim();
+      else if (/^https:\/\//i.test(line)) info.url ||= line;
+    }
+    info.name ||= lines.find(line => !/^https?:\/\//i.test(line) && !/^(주소|영업시간|주차|네이버 플레이스)\s*[:：]/.test(line));
+    info.url ||= $('#place-url').value.trim();
+    applyImportedPlace(info);
+  } catch (e) {
+    $('#place-status').className = 'field-help error';
+    $('#place-status').textContent = e.message;
+  }
+};
 $('#fetch-place').onclick = async () => {
   const url = $('#place-url').value.trim();
   if (!url) return toast('플레이스 주소를 먼저 넣어주세요.', true);
@@ -128,11 +187,9 @@ $('#fetch-place').onclick = async () => {
   try {
     const result = await api('/api/place', { url });
     if ($('#place-url').value.trim() !== url) return;
-    if (!$('#name').value.trim()) $('#name').value = result.name;
-    $('#place-status').className = 'field-help';
-    $('#place-status').textContent = `${result.name} · ${result.source}. 가게 이름과 나머지 정보를 확인해주세요.`;
-    toast('가게 이름을 확인했어요.');
+    applyImportedPlace(result);
   } catch (e) {
+    $('#place-paste').open = true;
     $('#place-status').className = 'field-help error';
     $('#place-status').replaceChildren(document.createTextNode(e.message + ' '));
     try {
