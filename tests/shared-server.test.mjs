@@ -16,6 +16,10 @@ test('공유 서버는 사용자 키를 무시하고 서버 키를 사용하며 
   if(url!=='https://api.openai.com/v1/chat/completions') throw new Error('Unexpected network call');
   if(options.headers.Authorization!=='Bearer test-server-only-key') throw new Error('Server key not used');
   const body=JSON.parse(options.body);
+  if(body.messages[0].content.startsWith('네이버 플레이스')) {
+   if(!body.messages[1].content[0].image_url.url.startsWith('data:image/png;base64,')) throw new Error('Image missing');
+   return Response.json({choices:[{message:{content:JSON.stringify({name:'캡처 가게',address:'확인된 주소',hours:'',parking:'',extra:'버릴 필드'})}}]});
+  }
   if(!body.messages[0].content.includes('일상 방문기형')) throw new Error('Style missing');
   return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({titles:['테스트 방문기'],intro:'메모로 쓴 방문기예요.',sections:[],closing:'잘 다녀왔어요.',hashtags:'#테스트'})}}]}),{headers:{'Content-Type':'application/json'}});
  };`);
@@ -28,6 +32,12 @@ test('공유 서버는 사용자 키를 무시하고 서버 키를 사용하며 
   const health=await (await fetch(base+'/api/health')).json();assert.equal(health.aiConfigured,true);assert.equal(Object.keys(health).length,2);
   const r=await fetch(base+'/api/generate',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://studio.example.com'},body:JSON.stringify({name:'테스트',visit:'방문했어요.',mode:'ai',apiKey:'test-client-key-ignored'})});
   assert.equal(r.status,200);const text=await r.text();assert.doesNotMatch(text,/test-server-only-key|test-client-key-ignored/);assert.equal(JSON.parse(text).mode,'ai');
+  const screenshot=await fetch(base+'/api/place-image',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://studio.example.com'},body:JSON.stringify({image:'data:image/png;base64,AA=='})});
+  assert.equal(screenshot.status,200);
+  assert.deepEqual(await screenshot.json(),{name:'캡처 가게',address:'확인된 주소',hours:'',parking:''});
+  const invalid=await fetch(base+'/api/place-image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:'https://example.com/a.png'})});
+  assert.equal(invalid.status,400);
   const forbidden=await fetch(base+'/api/generate',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://other.example.com'},body:'{}'});assert.equal(forbidden.status,403);
  } finally {child.kill('SIGTERM');await new Promise(resolve=>child.once('exit',resolve));await rm(dir,{recursive:true,force:true});}
 });
+

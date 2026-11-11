@@ -124,9 +124,9 @@ function applyImportedPlace(result) {
   if (busy || importing) throw new Error('글 작성이나 사진 등록이 끝난 뒤 다시 불러와 주세요.');
   const name = typeof result?.name === 'string' ? result.name.trim().slice(0, 100) : '';
   if (!name) throw new Error('가게 이름을 확인하지 못했어요.');
-  const url = new URL(result.url);
-  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') ||
-    !['naver.me','map.naver.com','place.naver.com','m.place.naver.com','pcmap.place.naver.com'].includes(url.hostname))
+  const url = result.url ? new URL(result.url) : null;
+  if (url && (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') ||
+    !['naver.me','map.naver.com','place.naver.com','m.place.naver.com','pcmap.place.naver.com'].includes(url.hostname)))
     throw new Error('네이버 플레이스 주소만 가져올 수 있어요.');
   const article = $('#article');
   const table = draft ? article.querySelector(':scope > .post-table') : null;
@@ -134,7 +134,7 @@ function applyImportedPlace(result) {
   if ([oldName, $('#name').value.trim()].some(value => value && value !== name))
     throw new Error('작성 중인 가게와 불러온 가게 이름이 달라서 반영하지 않았어요.');
   $('#name').value ||= name;
-  $('#place-url').value = url.href;
+  if (url) $('#place-url').value = url.href;
   const rows = [['가게 이름', name]];
   for (const [key, label] of [['address','주소'],['hours','영업시간'],['parking','주차']]) {
     const field = $('#' + key);
@@ -142,7 +142,7 @@ function applyImportedPlace(result) {
     if (!field.value.trim() && value) field.value = value;
     if (field.value.trim()) rows.push([label, field.value.trim()]);
   }
-  rows.push(['네이버 플레이스', url.href]);
+  if (url) rows.push(['네이버 플레이스', url.href]);
   if (draft) {
     const existing = table || el('table', 'post-table');
     if (!table) article.querySelector('h1').after(el('h2', '', '매장 정보'), existing);
@@ -161,6 +161,30 @@ function applyImportedPlace(result) {
   $('#place-status').className = 'field-help';
   $('#place-status').textContent = draft ? name + ' · 매장 정보를 현재 글에 반영했어요.' : name + ' · 글을 만들 때 매장 정보에 자동으로 들어가요.';
 }
+$('#read-place-image').onclick = async () => {
+  const picker = $('#place-image-file');
+  const file = picker.files[0];
+  if (!file) return toast('플레이스 화면 캡처를 먼저 선택해주세요.', true);
+  const button = $('#read-place-image');
+  const url = $('#place-url').value.trim();
+  const startingDraft = draft;
+  const startingName = $('#name').value;
+  button.disabled = true;
+  $('#place-status').className = 'field-help';
+  $('#place-status').textContent = '캡처에서 가게 정보를 읽고 있어요…';
+  try {
+    const result = await api('/api/place-image', { image: await imageData(file) });
+    if (picker.files[0] !== file || draft !== startingDraft || $('#name').value !== startingName || $('#place-url').value.trim() !== url) {
+      $('#place-status').textContent = '작성 중인 가게 정보가 바뀌었어요. 캡처 읽기를 다시 눌러주세요.';
+      return;
+    }
+    applyImportedPlace({...result,url});
+    $('#place-status').textContent += ' 캡처에서 읽은 주소와 영업시간은 게시 전에 확인해주세요.';
+  } catch (e) {
+    $('#place-status').className = 'field-help error';
+    $('#place-status').textContent = e.message;
+  } finally { button.disabled = false; }
+};
 $('#apply-place-text').onclick = () => {
   try {
     const info = {};
@@ -189,7 +213,7 @@ $('#fetch-place').onclick = async () => {
     if ($('#place-url').value.trim() !== url) return;
     applyImportedPlace(result);
   } catch (e) {
-    $('#place-paste').open = true;
+    $('#place-image').open = true;
     $('#place-status').className = 'field-help error';
     $('#place-status').replaceChildren(document.createTextNode(e.message + ' '));
     try {
