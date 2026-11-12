@@ -96,10 +96,26 @@ export function validateResult(r, photoCount) {
   if (!r || !Array.isArray(r.titles) || r.titles.length < 1 || !Array.isArray(r.sections)) throw new Error('AI 응답 형식을 읽지 못했어요. 다시 시도해주세요.');
   const string = (x, max = 20000) => typeof x === 'string' ? x.slice(0,max) : '';
   const sections = r.sections.slice(0,40).map(s => ({ heading: string(s.heading,200), text: string(s.text), caption: string(s.caption,160), photoIndex: Number.isInteger(s.photoIndex) && s.photoIndex >= 0 && s.photoIndex < photoCount ? s.photoIndex : null }));
-  const seen = new Set();
-  for (const s of sections) if (s.photoIndex !== null) { if (seen.has(s.photoIndex)) s.photoIndex = null; else seen.add(s.photoIndex); }
-  for (let i=0;i<photoCount;i++) if (!seen.has(i)) sections.push({ photoIndex:i, heading:'', text:'' });
-  return { titles:r.titles.slice(0,3).map(t=>string(t,200)), intro:string(r.intro), info:string(r.info), pullQuote:string(r.pullQuote,300), sections, closing:string(r.closing), hashtags:string(r.hashtags,2000), mode:'ai' };
+  const linkedPhotos = new Map();
+  for (const section of sections) {
+    if (section.photoIndex === null) continue;
+    if (linkedPhotos.has(section.photoIndex)) section.photoIndex = null;
+    else linkedPhotos.set(section.photoIndex, section);
+  }
+  const orderedPhotos = Array.from({ length: photoCount }, (_, photoIndex) =>
+    linkedPhotos.get(photoIndex) ?? { photoIndex, heading: '', text: '' });
+  const linkedIndexes = [...linkedPhotos.keys()].sort((a, b) => a - b);
+  let nextPhoto = 0;
+  let nextLinked = 0;
+  const orderedSections = sections.flatMap(section => {
+    if (section.photoIndex === null) return [section];
+    // Keep unlinked text in place and add omitted photos before the next linked photo.
+    const start = nextPhoto;
+    nextPhoto = linkedIndexes[nextLinked++] + 1;
+    return orderedPhotos.slice(start, nextPhoto);
+  });
+  orderedSections.push(...orderedPhotos.slice(nextPhoto));
+  return { titles:r.titles.slice(0,3).map(t=>string(t,200)), intro:string(r.intro), info:string(r.info), pullQuote:string(r.pullQuote,300), sections:orderedSections, closing:string(r.closing), hashtags:string(r.hashtags,2000), mode:'ai' };
 }
 
 // Public venue details verified against the Naver Place screen on 2026-11-11.

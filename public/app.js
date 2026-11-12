@@ -1,11 +1,13 @@
 import { articleText, clipboardHtml, pngBlob, zipFiles, splitClipboardArticle } from './export.js';
 import { checklistItems, evaluateChecklist } from './naver-checklist.js';
+import { photoTime } from './photo-time.js';
 const $ = s => document.querySelector(s);
 const form = $('#draft-form');
 const placeHelp = '네이버 지도 공유 링크를 붙여넣으세요. 같은 위치에 등록된 매장이 있으면 선택할 수 있어요.';
 const newPlaceKey = 'youngs:next-place:';
 let appliedPlace = null;
 let photos = [];
+let photoOrderEdited = false;
 let draft = null;
 let outputPhotos = [];
 let busy = false;
@@ -44,6 +46,11 @@ function editable(tag, cls, text, placeholder = '') {
   });
   return node;
 }
+function movePhoto(from, to) {
+  [photos[from], photos[to]] = [photos[to], photos[from]];
+  photoOrderEdited = true;
+  renderPhotos();
+}
 function renderPhotos() {
   $('#photo-count').textContent = `${photos.length} / 20`;
   $('#photo-list').replaceChildren();
@@ -53,9 +60,13 @@ function renderPhotos() {
     const img = el('img'); img.src = p.image; img.alt = p.caption || `방문 사진 ${i + 1}`;
     const controls = el('div', 'photo-controls');
     for (const [text, title, action, disabled] of [
-      ['←', '사진 앞으로 이동', () => { [photos[i - 1], photos[i]] = [photos[i], photos[i - 1]]; renderPhotos(); }, i === 0],
-      ['→', '사진 뒤로 이동', () => { [photos[i + 1], photos[i]] = [photos[i], photos[i + 1]]; renderPhotos(); }, i === photos.length - 1],
-      ['×', '사진 삭제', () => { photos.splice(i, 1); renderPhotos(); }, false]
+      ['←', '사진 앞으로 이동', () => movePhoto(i, i - 1), i === 0],
+      ['→', '사진 뒤로 이동', () => movePhoto(i, i + 1), i === photos.length - 1],
+      ['×', '사진 삭제', () => {
+        photos.splice(i, 1);
+        if (photos.length <= 1) photoOrderEdited = false;
+        renderPhotos();
+      }, false]
     ]) {
       const b = el('button', '', text); b.type = 'button'; b.title = title; b.setAttribute('aria-label', `${i + 1}번 ${title}`); b.disabled = disabled; b.onclick = action; controls.append(b);
     }
@@ -80,6 +91,7 @@ async function imageData(file) {
   } finally { URL.revokeObjectURL(objectUrl); }
 }
 let importing = false;
+const comparePhotoTimes = (a, b) => (a.time ?? Infinity) - (b.time ?? Infinity);
 async function addPhotos(files) {
   if (importing || busy) return toast('진행 중인 작업이 끝나면 사진을 추가해주세요.');
   if (!files.length) return;
@@ -89,6 +101,7 @@ async function addPhotos(files) {
   try {
     const { added, errors } = await readPhotos(files, 20 - photos.length);
     photos.push(...added);
+    if (!photoOrderEdited) photos.sort(comparePhotoTimes);
     renderPhotos();
     $('#photo-status').textContent = photoSummary(added, errors);
   } finally {
@@ -101,10 +114,10 @@ async function readPhotos(files, slots) {
   const added = [], errors = [];
   for (const file of files) {
     if (added.length >= slots) { errors.push('사진은 최대 20장까지 등록할 수 있어요.'); break; }
-    try { added.push({ image: await imageData(file), caption: '' }); }
+    try { added.push({ image: await imageData(file), caption: '', time: await photoTime(file) }); }
     catch (e) { errors.push(file.name + ': ' + (e.message || '사진을 읽을 수 없어요.')); }
   }
-  return { added, errors };
+  return { added: added.sort(comparePhotoTimes), errors };
 }
 function photoSummary(added, errors) {
   return [added.length ? `${added.length}장 추가했어요.` : '', ...errors].filter(Boolean).join(' ');
@@ -429,7 +442,7 @@ form.onsubmit = async event => {
   event.preventDefault();
   if (busy || importing) return;
   const data = Object.fromEntries(new FormData(form));
-  data.photos = photos.map(p => ({ ...p, image: data.mode === 'ai' ? p.image : '' }));
+  data.photos = photos.map(({ caption, image }) => ({ caption, image: data.mode === 'ai' ? image : '' }));
   data.disclosure = $('#sponsorship').value === 'none' ? '' : $('#disclosure').value.trim();
   if (!data.visit.trim() && !data.good.trim()) { $('#visit').focus(); return toast('방문 계기나 좋았던 점을 한 가지 적어주세요.', true); }
   if ($('#sponsorship').value === 'sponsored' && !data.disclosure) { $('#disclosure').focus(); return toast('실제 제공받은 내용을 표시할 문구를 입력해주세요.', true); }
@@ -531,7 +544,7 @@ $('#download').onclick = () => {
 $('#reset').onclick = () => {
   if (busy || importing) return toast('진행 중인 작업이 끝나면 다시 시도해주세요.');
   if (!confirm('입력한 내용과 사진, 작성한 초안을 모두 지울까요?')) return;
-  photos = []; outputPhotos = []; draft = null; appliedPlace = null; form.reset(); renderPhotos();
+  photos = []; photoOrderEdited = false; outputPhotos = []; draft = null; appliedPlace = null; form.reset(); renderPhotos();
   $('#article').replaceChildren(); $('#article').hidden = true; $('#empty-preview').hidden = false;
   $('#posting-checklist').hidden = true; manualChecks.clear();
   $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#copy-naver').disabled = true; $('#add-divider').disabled = true; $('#add-draft-photo').disabled = true; $('#draft-edit-status').textContent = ''; $('#copy').disabled = true; $('#download').disabled = true; $('#photo-zip').disabled = true;
@@ -591,6 +604,7 @@ $('#restore-file').onchange = async event => {
     });
     outputPhotos = [...article.querySelectorAll('img')].map(img => ({ image: img.src, caption: img.alt }));
     photos = outputPhotos.map(p => ({ ...p }));
+    photoOrderEdited = true;
     draft = { mode: 'restored' };
     $('#draft-mode').textContent = '불러온 방문기';
     $('#copy-naver').disabled = false; $('#add-divider').disabled = false; $('#add-draft-photo').disabled = false; $('#draft-edit-status').textContent = ''; $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = !photos.length;

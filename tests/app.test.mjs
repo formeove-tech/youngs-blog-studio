@@ -20,9 +20,19 @@ test('메모 초안은 사용자 경험을 보존하고 미입력 사실을 만�
   assert.doesNotMatch(JSON.stringify(r),/무료주차|남자친구|불향|비 오는/);
   assert.equal(r.hashtags.split('#피자').length-1,1);
 });
-test('AI 결과에서 사진 누락·중복·잘못된 인덱스를 보정한다',()=>{
-  const r=validateResult({titles:['제목'],sections:[{photoIndex:0,text:'첫 사진'},{photoIndex:0,text:'중복'},{photoIndex:99,text:'범위 밖'}]},3);
-  assert.deepEqual(r.sections.filter(s=>s.photoIndex!==null).map(s=>s.photoIndex),[0,1,2]);
+test('AI가 사진을 빠뜨리거나 순서를 바꿔도 사진과 문단을 입력 순서대로 연결한다',()=>{
+  const r=validateResult({titles:['제목'],sections:[
+    {photoIndex:2,heading:'음식',caption:'메인 요리',text:'세 번째 사진'},
+    {photoIndex:99,text:'사진 없는 문단'},
+    {photoIndex:1,heading:'메뉴판',caption:'주문하기 전',text:'두 번째 사진'},
+    {photoIndex:2,text:'중복'}
+  ]},4);
+  assert.deepEqual(r.sections.map(s=>[s.photoIndex,s.text]),[
+    [0,''],[1,'두 번째 사진'],[null,'사진 없는 문단'],[2,'세 번째 사진'],[null,'중복'],[3,'']
+  ]);
+  assert.deepEqual(r.sections.filter(s=>s.caption).map(s=>[s.photoIndex,s.heading,s.caption]),[
+    [1,'메뉴판','주문하기 전'],[2,'음식','메인 요리']
+  ]);
   assert.throws(()=>validateResult({},1));
 });
 
