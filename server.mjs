@@ -86,7 +86,7 @@ const server=http.createServer(async(req,res)=>{
       }
       return send(res,404,{error:'없는 기능입니다.'});
     }
-    const files={'/':'index.html','/app.js':'app.js','/export.js':'export.js','/naver-checklist.js':'naver-checklist.js','/photo-time.js':'photo-time.js','/style.css':'style.css'};
+    const files={'/':'index.html','/app.js':'app.js','/export.js':'export.js','/naver-checklist.js':'naver-checklist.js','/photo-time.js':'photo-time.js','/typography.js':'typography.js','/style.css':'style.css'};
     if(req.method==='GET' && files[url.pathname]) {
       const name=files[url.pathname]; const ext=path.extname(name);
       res.writeHead(200,{'Content-Type':{'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8'}[ext], 'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Cache-Control':'no-store'});

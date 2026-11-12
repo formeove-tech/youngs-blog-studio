@@ -1,6 +1,7 @@
 import { articleText, clipboardHtml, pngBlob, zipFiles, splitClipboardArticle } from './export.js';
 import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 import { photoTime } from './photo-time.js';
+import { articleTypography, loadArticleFonts, styleExportedArticle } from './typography.js';
 const $ = s => document.querySelector(s);
 const form = $('#draft-form');
 const placeHelp = '네이버 지도 공유 링크를 붙여넣으세요. 같은 위치에 등록된 매장이 있으면 선택할 수 있어요.';
@@ -362,6 +363,21 @@ $('#sponsorship').onchange = () => {
   $('#disclosure-wrap').hidden = choice === 'none';
   $('#disclosure').value = choice === 'self' ? '직접 결제하고 다녀온 후기입니다.' : '';
 };
+function setFontStyle(value) {
+  const typography = articleTypography(value);
+  const key = typography ? value : 'default';
+  $('#font-style').value = key;
+  $('#article').dataset.fontStyle = key;
+  const previewStyle = $('#preview').style;
+  previewStyle.setProperty('--article-body-font', typography?.body ?? '');
+  previewStyle.setProperty('--article-heading-font', typography?.heading ?? '');
+  previewStyle.setProperty('--article-heading-weight', typography?.weight ?? '');
+  if (typography?.webFont) loadArticleFonts(document);
+  $('#copy-parts')?.remove();
+}
+$('#font-style').onchange = event => setFontStyle(event.target.value);
+setFontStyle($('#font-style').value);
+
 function renderDraft(data) {
   $('#copy-parts')?.remove();
   const article = $('#article'); article.replaceChildren(); article.hidden = false; $('#empty-preview').hidden = true;
@@ -536,6 +552,8 @@ $('#download').onclick = () => {
   const charset = doc.createElement('meta'); charset.setAttribute('charset', 'utf-8'); doc.head.prepend(charset);
   const viewport = doc.createElement('meta'); viewport.name = 'viewport'; viewport.content = 'width=device-width,initial-scale=1'; doc.head.append(viewport);
   const css = doc.createElement('style'); css.textContent = 'body{max-width:760px;margin:40px auto;padding:0 22px;font-family:system-ui,sans-serif;color:#303b30;line-height:2}img{width:100%;height:auto;margin:20px 0}p,blockquote{white-space:pre-wrap;overflow-wrap:anywhere}h1{font-size:26px;line-height:1.6}h2{font-size:19px;margin-top:35px}.post-info{padding:20px;background:#f3f6ed}.post-tags{color:#547448}.post-disclosure{font-size:12px;color:#777}.post-quote{margin:35px 0;padding:18px 24px;border-left:3px solid #9eae8d;background:#f8f8f3;font-size:18px}.post-divider{border:0;border-top:1px solid #dfe5d7;margin:36px auto;width:70%}.photo-caption{color:#7b8374;font-size:12px;text-align:center}[data-template=warm]>h1{text-align:center}[data-template=warm]>.post-quote{text-align:center;border-left:0;border-top:1px solid #dfe5d7;border-bottom:1px solid #dfe5d7}'; css.textContent += 'table{border-collapse:collapse;width:100%;margin:20px 0}th,td{border:1px solid #dfe5d7;padding:12px;white-space:pre-wrap;text-align:left;vertical-align:top}th{background:#f3f6ed;font-weight:600}'; doc.head.append(css);
+  if (articleTypography(copy.dataset.fontStyle)?.webFont) loadArticleFonts(doc);
+  styleExportedArticle(copy);
   doc.body.append(copy);
   const blob = new Blob(['<!doctype html>\n' + doc.documentElement.outerHTML], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = title.replace(/[\\/:*?"<>|]/g, '').slice(0, 70) + '.html'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -545,6 +563,7 @@ $('#reset').onclick = () => {
   if (busy || importing) return toast('진행 중인 작업이 끝나면 다시 시도해주세요.');
   if (!confirm('입력한 내용과 사진, 작성한 초안을 모두 지울까요?')) return;
   photos = []; photoOrderEdited = false; outputPhotos = []; draft = null; appliedPlace = null; form.reset(); renderPhotos();
+  setFontStyle('default');
   $('#article').replaceChildren(); $('#article').hidden = true; $('#empty-preview').hidden = false;
   $('#posting-checklist').hidden = true; manualChecks.clear();
   $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#copy-naver').disabled = true; $('#add-divider').disabled = true; $('#add-draft-photo').disabled = true; $('#draft-edit-status').textContent = ''; $('#copy').disabled = true; $('#download').disabled = true; $('#photo-zip').disabled = true;
@@ -595,6 +614,7 @@ $('#restore-file').onchange = async event => {
     const article = $('#article');
     article.replaceChildren(...restored.childNodes);
     article.dataset.template = source.dataset.template === 'calm' ? 'calm' : 'warm';
+    setFontStyle(source.dataset.fontStyle);
     article.hidden = false; $('#empty-preview').hidden = true;
     article.querySelectorAll('h1,h2,p,blockquote,td').forEach(node => {
       // Use the same plain-text paste handling as newly generated articles.

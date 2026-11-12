@@ -1,3 +1,5 @@
+import { styleExportedArticle } from './typography.js';
+
 const DIVIDER_TEXT = '──────────';
 export function articleText(article, markers = false) {
   let photo = 0;
@@ -33,6 +35,7 @@ export function clipboardHtml(article) {
   copy.querySelectorAll('hr').forEach(hr => { const line = document.createElement('p'); line.textContent = DIVIDER_TEXT; line.style.cssText = 'text-align:center;color:#526449;margin:24px 0;'; hr.replaceWith(line); });
   copy.querySelectorAll('table').forEach(table => { table.style.cssText = 'border-collapse:collapse;width:100%;margin:20px 0;border:1px solid #dfe5d7;'; });
   copy.querySelectorAll('th').forEach(th => { th.style.cssText = 'border:1px solid #dfe5d7;padding:10px 12px;background:#f3f6ed;text-align:left;font-size:13px;font-weight:bold;'; });
+  styleExportedArticle(copy);
   return '<!doctype html><html><body><!--StartFragment-->' + copy.innerHTML + '<!--EndFragment--></body></html>';
 }
 

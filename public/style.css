@@ -6,3 +6,30 @@
 .toast{width:max-content;max-width:min(520px,85vw)}
 .place-options:not([hidden]){display:grid;gap:6px;margin:8px 0 16px}.place-option{display:grid;gap:2px;width:100%;text-align:left;padding:11px 14px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink)}.place-option:hover,.place-option:focus-visible{border-color:var(--green)}.place-option span{font-size:12px;overflow-wrap:anywhere}.place-options .field-help{margin:2px 0 0}
 .place-conflict{display:grid;gap:4px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink)}.place-conflict span{font-size:12px;overflow-wrap:anywhere}.place-open-new{justify-self:start;display:inline-block;padding:7px 12px;margin-top:4px;border-radius:6px;background:var(--green);color:var(--white);text-decoration:none;font-weight:700}.place-open-new:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+
+.draft-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.draft-controls label.font-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  white-space: nowrap;
+}
+.font-control select {
+  width: auto;
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+#article { font-family: var(--article-body-font, inherit); }
+#article :is(h1, h2, .post-quote), #empty-preview h2 {
+  font-family: var(--article-heading-font, inherit);
+}
+#article h1 { font-weight: var(--article-heading-weight, 600); }
+#article h2 { font-weight: var(--article-heading-weight, 700); }
+#empty-preview h2 { font-weight: var(--article-heading-weight, 500); }
