@@ -33,3 +33,35 @@
 #article h1 { font-weight: var(--article-heading-weight, 600); }
 #article h2 { font-weight: var(--article-heading-weight, 700); }
 #empty-preview h2 { font-weight: var(--article-heading-weight, 500); }
+
+.copy-toolbar { margin-bottom: 14px; }
+.copy-toolbar .preview-tools button {
+  min-height: 35px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.copy-toolbar #copy {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--white);
+}
+.copy-toolbar #copy:not(:disabled):hover { background: #2e4635; }
+.copy-fallback { margin-top: 7px; }
+.copy-fallback summary {
+  cursor: pointer;
+  color: #536b46;
+  font-size: 11px;
+}
+.copy-fallback .secondary { margin-top: 6px; }
+.copy-parts {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid #dfe5d6;
+  border-radius: 7px;
+  background: #f1f4eb;
+}
+.copy-parts p {
+  margin: 0 0 8px;
+  font-size: 11px;
+}

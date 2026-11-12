@@ -1,8 +1,8 @@
 import { styleExportedArticle } from './typography.js';
 
 const DIVIDER_TEXT = '──────────';
-export function articleText(article, markers = false) {
-  let photo = 0;
+export function articleText(article, markers = false, photoOffset = 0) {
+  let photo = photoOffset;
   return [...article.children].map(node => node.tagName === 'IMG'
     ? (markers ? `[사진 ${String(++photo).padStart(2, '0')}]` : '')
     : node.tagName === 'HR' ? DIVIDER_TEXT
@@ -89,4 +89,86 @@ export function splitClipboardArticle(article, maxBytes = NAVER_COPY_BUDGET) {
   }
   if (part.children.length) parts.push(part);
   return parts;
+}
+
+function clipboardPart(article, photoOffset = 0) {
+  const html = clipboardHtml(article);
+  return {
+    html,
+    bytes: new Blob([html]).size,
+    text: articleText(article, true, photoOffset),
+    photoCount: article.querySelectorAll('img').length
+  };
+}
+
+function imageSizeLimit(sizes, budget) {
+  const sorted = [...sizes].sort((a, b) => a - b);
+  for (const [index, size] of sorted.entries()) {
+    const share = Math.floor(budget / (sorted.length - index));
+    if (size > share) return share;
+    budget -= size;
+  }
+  return sorted.at(-1) ?? 0;
+}
+
+const clipboardEncodings = [
+  { maxSide: 1400, quality: 0.76 },
+  { maxSide: 1400, quality: 0.62 },
+  { maxSide: 1120, quality: 0.62 },
+  { maxSide: 960, quality: 0.56 },
+  { maxSide: 880, quality: 0.50 }
+];
+
+async function compactClipboardImage(source, sizeLimit) {
+  const image = new Image();
+  image.src = source;
+  try { await image.decode(); } catch { return source; }
+  const canvas = document.createElement('canvas');
+  canvas.width = 0;
+  const context = canvas.getContext('2d');
+  if (!context) return source;
+
+  let best = source;
+  for (const { maxSide, quality } of clipboardEncodings) {
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+    }
+    const jpeg = canvas.toDataURL('image/jpeg', quality);
+    if (jpeg.length < best.length) best = jpeg;
+    if (best.length <= sizeLimit) break;
+  }
+  return best;
+}
+
+export async function prepareClipboardParts(article, maxBytes = NAVER_COPY_BUDGET) {
+  const full = clipboardPart(article);
+  if (full.bytes <= maxBytes) return [full];
+
+  // Work on the clipboard copy so a large paste never reduces preview or saved-photo quality.
+  const copy = article.cloneNode(true);
+  const photos = [...copy.querySelectorAll('img')];
+  const sourceSizes = photos.map(photo => photo.src.length);
+  const imageBudget = maxBytes - full.bytes + sourceSizes.reduce((sum, size) => sum + size, 0);
+  if (imageBudget > 0 && photos.length) {
+    const limit = imageSizeLimit(sourceSizes, imageBudget);
+    for (const photo of photos) {
+      if (photo.src.length > limit) photo.src = await compactClipboardImage(photo.src, limit);
+    }
+    const compact = clipboardPart(copy);
+    if (compact.bytes <= maxBytes) return [compact];
+  }
+
+  let photoOffset = 0;
+  return splitClipboardArticle(copy, maxBytes).map(article => {
+    const part = clipboardPart(article, photoOffset);
+    photoOffset += part.photoCount;
+    return part;
+  });
 }

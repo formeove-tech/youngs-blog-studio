@@ -1,4 +1,4 @@
-import { articleText, clipboardHtml, pngBlob, zipFiles, splitClipboardArticle } from './export.js';
+import { articleText, pngBlob, zipFiles, prepareClipboardParts } from './export.js';
 import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 import { photoTime } from './photo-time.js';
 import { articleTypography, loadArticleFonts, styleExportedArticle } from './typography.js';
@@ -12,6 +12,8 @@ let photoOrderEdited = false;
 let draft = null;
 let outputPhotos = [];
 let busy = false;
+let copyingBody = false;
+let copyRevision = 0;
 let toastTimer;
 let serverAi = false;
 const manualChecks = new Set();
@@ -181,7 +183,7 @@ function applyImportedPlace(result) {
         const next = el('tr'); next.append(el('th', '', label), editable('td', '', value, label + ' 수정')); body.append(next);
       }
     }
-    $('#copy-parts')?.remove();
+    invalidateCopyParts();
     updateChecklist();
   }
   $('#place-status').className = 'field-help';
@@ -373,13 +375,13 @@ function setFontStyle(value) {
   previewStyle.setProperty('--article-heading-font', typography?.heading ?? '');
   previewStyle.setProperty('--article-heading-weight', typography?.weight ?? '');
   if (typography?.webFont) loadArticleFonts(document);
-  $('#copy-parts')?.remove();
+  invalidateCopyParts();
 }
 $('#font-style').onchange = event => setFontStyle(event.target.value);
 setFontStyle($('#font-style').value);
 
 function renderDraft(data) {
-  $('#copy-parts')?.remove();
+  invalidateCopyParts();
   const article = $('#article'); article.replaceChildren(); article.hidden = false; $('#empty-preview').hidden = true;
   article.dataset.template = data.template === 'calm' ? 'calm' : 'warm';
   $('#draft-mode').textContent = data.mode === 'ai' ? 'AI 방문기' : '메모 초안';
@@ -418,7 +420,8 @@ function renderDraft(data) {
     const related = el('p', 'post-related'); const link = el('a', '', '함께 읽으면 좋은 방문기'); link.href = data.relatedUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; related.append(link); article.append(related);
   }
   article.append(editable('p', 'post-tags', data.hashtags, '#해시태그'));
-  $('#copy-naver').disabled = false; $('#add-divider').disabled = false; $('#add-draft-photo').disabled = false; $('#draft-edit-status').textContent = ''; $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = outputPhotos.length === 0;
+  syncCopyButtons();
+  $('#add-divider').disabled = false; $('#add-draft-photo').disabled = false; $('#draft-edit-status').textContent = ''; $('#download').disabled = false; $('#photo-zip').disabled = outputPhotos.length === 0;
   manualChecks.clear(); updateChecklist();
 }
 function updateChecklist() {
@@ -453,7 +456,7 @@ function updateChecklist() {
   }
 }
 let checklistTimer;
-$('#article').addEventListener('input', () => { $('#copy-parts')?.remove(); clearTimeout(checklistTimer); checklistTimer = setTimeout(updateChecklist, 150); });
+$('#article').addEventListener('input', () => { invalidateCopyParts(); clearTimeout(checklistTimer); checklistTimer = setTimeout(updateChecklist, 150); });
 form.onsubmit = async event => {
   event.preventDefault();
   if (busy || importing) return;
@@ -491,53 +494,116 @@ function exportArticle() {
   copy.querySelectorAll('[contenteditable]').forEach(n => { n.removeAttribute('contenteditable'); n.removeAttribute('role'); n.removeAttribute('aria-label'); n.removeAttribute('data-placeholder'); });
   return copy;
 }
+function exportBody() {
+  const body = exportArticle();
+  body.querySelector('h1')?.remove();
+  return body;
+}
+function draftTitle() {
+  return $('#article h1')?.innerText.trim().replace(/\s*\n\s*/g, ' ') ?? '';
+}
+function invalidateCopyParts() {
+  copyRevision++;
+  $('#copy-parts')?.remove();
+}
+function syncCopyButtons() {
+  for (const id of ['#copy-title', '#copy', '#copy-naver']) $(id).disabled = !draft || copyingBody;
+}
+async function writeClipboardPart(part) {
+  const payload = Promise.resolve(part);
+  const formats = {
+    'text/html': payload.then(({ html }) => new Blob([html], { type: 'text/html' })),
+    'text/plain': payload.then(({ text }) => new Blob([text], { type: 'text/plain' }))
+  };
+  const write = async () => navigator.clipboard.write([new ClipboardItem(formats)]);
+  await Promise.all([write(), ...Object.values(formats)]);
+}
 function showCopyParts(parts) {
-  let panel = $('#copy-parts');
-  if (!panel) {
-    panel = el('div', 'card'); panel.id = 'copy-parts';
-    panel.setAttribute('aria-live', 'polite');
-    $('.preview-toolbar').after(panel);
-  }
-  panel.replaceChildren(el('p', '', `사진을 포함한 글을 ${parts.length}개로 나눴어요. 아래 순서대로 복사해 네이버 본문 끝에 붙여넣으세요. 사진이 빠지면 사진 ZIP으로 업로드해주세요.`));
+  const panel = el('div', 'copy-parts');
+  panel.id = 'copy-parts';
+  panel.append(el('p', '', `본문을 ${parts.length}개 구간으로 나눴어요. 복사된 1번을 붙여넣은 뒤 2번부터 순서대로 본문 끝에 붙여넣으세요.`));
+  const buttons = el('div', 'preview-tools');
   parts.forEach((part, i) => {
-    const button = el('button', '', `${i + 1}/${parts.length} 복사 · ${(new Blob([clipboardHtml(part)]).size / 1_000_000).toFixed(2)}MB`);
+    const label = `${i + 1}/${parts.length}`;
+    const button = el('button', '', `${label} ${i === 0 ? '다시 복사' : '복사'} · ${(part.bytes / 1_000_000).toFixed(2)}MB`);
     button.type = 'button';
-    button.onclick = () => writeArticleClipboard(part).then(() => {
-      button.textContent = `${i + 1}/${parts.length} 복사됨 · 네이버에 붙여넣으세요`;
-    }).catch(e => toast(e.message, true));
-    panel.append(button);
+    button.onclick = async () => {
+      try {
+        await writeClipboardPart(part);
+        $('#draft-edit-status').textContent = `${label} 구간을 복사했어요. 네이버 본문 끝에 붙여넣으세요.`;
+      } catch { toast('복사에 실패했어요. 사진 위치 본문 복사나 사진 ZIP을 이용해주세요.', true); }
+    };
+    buttons.append(button);
   });
+  panel.append(buttons);
+  $('.copy-toolbar').after(panel);
 }
-async function writeArticleClipboard(copy) {
-  if (navigator.clipboard?.write && window.ClipboardItem) {
-    await navigator.clipboard.write([new ClipboardItem({
-      'text/html': new Blob([clipboardHtml(copy)], { type: 'text/html' }),
-      'text/plain': new Blob([articleText(copy)], { type: 'text/plain' })
-    })]);
-    toast('복사했어요. 네이버에서 사진이 빠지면 사진 ZIP을 받아 사진 메뉴로 첨부해주세요.');
-  } else {
-    await navigator.clipboard.writeText(articleText(copy));
-    toast('이 브라우저에서는 글만 복사돼요. 사진 ZIP으로 업로드해주세요.');
-  }
+async function copyBodyText(body) {
+  await navigator.clipboard.writeText(articleText(body, true));
+  $('#draft-edit-status').textContent = body.querySelector('img')
+    ? '사진 위치가 있는 본문을 복사했어요. 사진 ZIP의 번호 순서대로 첨부해주세요.'
+    : '본문을 복사했어요. 네이버 본문 칸에 붙여넣으세요.';
 }
-$('#copy').onclick = async () => {
+$('#copy-title').onclick = async () => {
+  if (!draft || copyingBody) return;
+  const title = draftTitle();
+  if (!title) return toast('제목을 입력한 뒤 복사해주세요.', true);
   try {
-    const parts = splitClipboardArticle(exportArticle());
-    if (parts.length > 1) {
-      showCopyParts(parts);
-      toast(`복사 용량이 커서 ${parts.length}개로 나눴어요. 순서대로 복사해주세요.`);
+    await navigator.clipboard.writeText(title);
+    $('#draft-edit-status').textContent = '제목을 복사했어요. 네이버 제목 칸에 붙여넣으세요.';
+  } catch { toast('제목 복사가 제한됐어요. 미리보기에서 제목을 선택해 복사해주세요.', true); }
+};
+$('#copy').onclick = async () => {
+  if (!draft || copyingBody) return;
+  invalidateCopyParts();
+  const revision = copyRevision;
+  const body = exportBody();
+  if (!body.children.length) return toast('복사할 본문이 없어요.', true);
+  copyingBody = true;
+  syncCopyButtons();
+  $('#copy').textContent = '복사 준비 중…';
+  try {
+    if (!navigator.clipboard?.write || !window.ClipboardItem) {
+      await copyBodyText(body);
       return;
     }
-    $('#copy-parts')?.remove();
-    if (parts.length) await writeArticleClipboard(parts[0]);
-  } catch (e) { toast(e.message || '복사에 실패했어요. 사진 ZIP 저장을 이용해주세요.', true); }
+    // Start the clipboard write inside the click, while larger photo copies are being prepared.
+    const preparation = prepareClipboardParts(body).then(parts => {
+      if (revision !== copyRevision) throw new Error('본문이 바뀌었어요.');
+      return parts;
+    });
+    const [parts] = await Promise.all([preparation, writeClipboardPart(preparation.then(parts => parts[0]))]);
+    if (revision !== copyRevision) {
+      if (draft) $('#draft-edit-status').textContent = '복사 중에 글이 수정됐어요. 최신 본문을 다시 복사해주세요.';
+    } else if (parts.length > 1) {
+      showCopyParts(parts);
+      $('#draft-edit-status').textContent = '1번 구간을 복사했어요. 네이버 본문 칸에 붙여넣으세요.';
+    } else {
+      const count = parts[0].photoCount;
+      $('#draft-edit-status').textContent = count
+        ? `본문과 사진 ${count}장을 복사했어요. 네이버 본문 칸에 붙여넣으세요.`
+        : '본문을 복사했어요. 네이버 본문 칸에 붙여넣으세요.';
+    }
+  } catch {
+    if (revision !== copyRevision) {
+      if (draft) $('#draft-edit-status').textContent = '복사 중에 글이 수정됐어요. 최신 본문을 다시 복사해주세요.';
+      return;
+    }
+    try { await copyBodyText(body); }
+    catch { toast('복사가 제한됐어요. 사진 ZIP 안의 blog-text.txt에서 본문을 복사해주세요.', true); }
+  } finally {
+    copyingBody = false;
+    $('#copy').textContent = '본문+사진 복사';
+    syncCopyButtons();
+  }
 };
 $('#photo-zip').onclick = () => {
-  const article = exportArticle();
+  const article = exportBody();
   const files = [...article.querySelectorAll('img')].map((img, i) => ({
     name: `${String(i + 1).padStart(2, '0')}.${img.src.startsWith('data:image/png;') ? 'png' : img.src.startsWith('data:image/webp;') ? 'webp' : 'jpg'}`,
     bytes: Uint8Array.from(atob(img.src.split(',')[1]), c => c.charCodeAt(0))
   }));
+  files.push({ name: 'blog-title.txt', bytes: new TextEncoder().encode(draftTitle()) });
   files.push({ name: 'blog-text.txt', bytes: new TextEncoder().encode(articleText(article, true)) });
   files.push({ name: 'naver-guide.txt', bytes: new TextEncoder().encode([...$('.naver-guide').querySelectorAll('summary,li,p')].map(node => node.textContent).join('\n\n')) });
   files.push({ name: 'posting-checklist.txt', bytes: new TextEncoder().encode(checklistItems.map(([, label,, help], i) => `${i + 1}. ${label}\n${help}`).join('\n\n')) });
@@ -566,7 +632,8 @@ $('#reset').onclick = () => {
   setFontStyle('default');
   $('#article').replaceChildren(); $('#article').hidden = true; $('#empty-preview').hidden = false;
   $('#posting-checklist').hidden = true; manualChecks.clear();
-  $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#copy-naver').disabled = true; $('#add-divider').disabled = true; $('#add-draft-photo').disabled = true; $('#draft-edit-status').textContent = ''; $('#copy').disabled = true; $('#download').disabled = true; $('#photo-zip').disabled = true;
+  syncCopyButtons();
+  $('#ai-settings').hidden = true; $('#disclosure-wrap').hidden = true; $('#add-divider').disabled = true; $('#add-draft-photo').disabled = true; $('#draft-edit-status').textContent = ''; $('#download').disabled = true; $('#photo-zip').disabled = true;
   clearPlaceOptions();
   $('#draft-mode').textContent = '미리보기'; $('#photo-status').textContent = ''; $('#place-status').className = 'field-help'; $('#place-status').textContent = placeHelp;
   document.querySelectorAll('.step').forEach((s, i) => s.classList.toggle('current', i === 0)); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -610,7 +677,6 @@ $('#restore-file').onchange = async event => {
     }
     for (const child of source.childNodes) { const safe = clean(child); if (safe) restored.append(safe); }
     if ((draft || photos.length) && !confirm('현재 작성 중인 내용을 저장한 글로 바꿀까요?')) return;
-    $('#copy-parts')?.remove();
     const article = $('#article');
     article.replaceChildren(...restored.childNodes);
     article.dataset.template = source.dataset.template === 'calm' ? 'calm' : 'warm';
@@ -627,7 +693,8 @@ $('#restore-file').onchange = async event => {
     photoOrderEdited = true;
     draft = { mode: 'restored' };
     $('#draft-mode').textContent = '불러온 방문기';
-    $('#copy-naver').disabled = false; $('#add-divider').disabled = false; $('#add-draft-photo').disabled = false; $('#draft-edit-status').textContent = ''; $('#copy').disabled = false; $('#download').disabled = false; $('#photo-zip').disabled = !photos.length;
+    syncCopyButtons();
+    $('#add-divider').disabled = false; $('#add-draft-photo').disabled = false; $('#draft-edit-status').textContent = ''; $('#download').disabled = false; $('#photo-zip').disabled = !photos.length;
     manualChecks.clear(); renderPhotos(); updateChecklist();
     article.querySelectorAll('img').forEach(img => img.addEventListener('load', updateChecklist, {once:true}));
     $('#photo-status').textContent = '저장한 글의 사진을 복원했어요. 새 초안을 만들면 현재 글이 바뀝니다.';
@@ -640,6 +707,7 @@ function photoActions(img) {
   const actions = el('div', 'photo-export-actions export-ignore');
   const copyImage = el('button', '', '이 사진 복사'); copyImage.type = 'button';
   copyImage.onclick = async () => {
+    if (copyingBody) return toast('본문 복사가 끝난 뒤 사진을 복사해주세요.');
     if (!navigator.clipboard?.write || !window.ClipboardItem) return toast('이 브라우저는 사진 복사를 지원하지 않아요. 사진 ZIP을 저장해 블로그에 업로드해주세요.', true);
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob(img.src) })]);
@@ -665,7 +733,7 @@ function placeInDraft(anchor, ...nodes) {
     if (tags) tags.before(...nodes); else previewArticle.append(...nodes);
   }
   insertAnchor = nodes.at(-1);
-  $('#copy-parts')?.remove();
+  invalidateCopyParts();
   $('#photo-zip').disabled = !previewArticle.querySelector('img');
   updateChecklist();
 }
@@ -699,10 +767,9 @@ $('#draft-photo-file').onchange = async event => {
 };
 
 $('#copy-naver').onclick = async () => {
-  if (!draft) return;
+  if (!draft || copyingBody) return;
   try {
-    await navigator.clipboard.writeText(articleText(exportArticle(), true));
-    $('#draft-edit-status').textContent = '본문을 복사했어요. 네이버에 붙여넣고, 사진 ZIP의 번호에 맞춰 사진을 첨부하세요.';
+    await copyBodyText(exportBody());
   } catch {
     $('#draft-edit-status').textContent = '복사가 제한됐어요. 사진 ZIP 안의 blog-text.txt를 열어 본문을 복사해주세요.';
   }

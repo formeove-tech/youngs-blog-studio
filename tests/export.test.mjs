@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {zipFiles} from '../public/export.js';
+import {articleText, zipFiles} from '../public/export.js';
 
 test('사진 ZIP은 파일 이름, 원본 바이트, 표준 CRC32와 중앙 디렉터리를 포함한다',async()=>{
  const bytes=new TextEncoder().encode('123456789');
@@ -38,4 +38,9 @@ test('분할 복사는 UTF-8 바이트 한도를 지키고 사진·문단 순서
 test('단일 사진이 한도를 넘으면 누락하거나 초과 복사하지 않고 안내한다',()=>{
  assert.throws(()=>splitClipboardArticle(new Article([new Article([],'x'.repeat(500))]),400),/사진 ZIP/);
  assert.deepEqual(splitClipboardArticle(new Article()),[]);
+});
+
+test('본문을 나눠 복사할 때 사진 표시 번호는 앞 구간에 이어진다', () => {
+  const part = { children: [{ tagName: 'IMG' }, { tagName: 'IMG' }] };
+  assert.equal(articleText(part, true, 2), '[사진 03]\n\n[사진 04]');
 });
