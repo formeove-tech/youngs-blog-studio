@@ -1,6 +1,7 @@
 import { articleText, pngBlob, zipFiles, prepareClipboardParts } from './export.js';
 import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 import { photoTime } from './photo-time.js';
+import { autoMosaic, pixelateRect } from './face-mosaic.js';
 import { articleTypography, loadArticleFonts, styleExportedArticle } from './typography.js';
 const $ = s => document.querySelector(s);
 const form = $('#draft-form');
@@ -8,6 +9,8 @@ const placeHelp = '네이버 지도 공유 링크를 붙여넣으세요. 같은 
 const newPlaceKey = 'youngs:next-place:';
 let appliedPlace = null;
 let photos = [];
+let nextPhotoId = 0;
+const newPhotoId = () => `photo-${++nextPhotoId}`;
 let photoOrderEdited = false;
 let draft = null;
 let outputPhotos = [];
@@ -49,6 +52,69 @@ function editable(tag, cls, text, placeholder = '') {
   });
   return node;
 }
+function syncPhotoImage(id, image) {
+  const output = outputPhotos.find(p => p.id === id);
+  if (output) output.image = image;
+  for (const img of $('#article').querySelectorAll('img[data-photo-id]')) {
+    if (img.dataset.photoId === id) img.src = image;
+  }
+  invalidateCopyParts();
+  if (draft) updateChecklist();
+}
+
+function openMosaicEditor(source, onSave) {
+  const modal = el('div', 'mosaic-modal');
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', '사진에서 얼굴 직접 가리기');
+  const panel = el('div', 'mosaic-panel');
+  const title = el('h3', '', '얼굴 직접 가리기');
+  const help = el('p', 'field-help', '가릴 얼굴 중앙을 눌러주세요. 여러 얼굴을 계속 선택할 수 있습니다. 얼굴이 클 때는 영역 크기를 키워주세요.');
+  const sizeRow = el('div', 'mosaic-size');
+  const sizeLabel = el('label', '', '가릴 영역');
+  const select = el('select');
+  for (const [value, label] of [['0.15','작게'],['0.24','보통'],['0.36','크게']]) {
+    const option = el('option', '', label); option.value = value; option.selected = value === '0.24'; select.append(option);
+  }
+  sizeRow.append(sizeLabel, select);
+  const canvas = el('canvas', 'mosaic-edit-canvas');
+  const actions = el('div', 'mosaic-actions');
+  const cancel = el('button', 'secondary', '취소');
+  const undo = el('button', 'secondary', '이번 수정 초기화');
+  const save = el('button', 'secondary mosaic-save', '모자이크 적용');
+  cancel.type = undo.type = save.type = 'button';
+  save.disabled = undo.disabled = true;
+  const close = () => { modal.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = event => { if (event.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  cancel.onclick = close;
+  modal.addEventListener('click', event => { if (event.target === modal) close(); });
+  const image = new Image();
+  image.src = source;
+  image.decode().then(() => {
+    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    const reset = () => { ctx.drawImage(image, 0, 0); save.disabled = undo.disabled = true; };
+    reset();
+    undo.onclick = reset;
+    canvas.onclick = event => {
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * canvas.width / rect.width;
+      const y = (event.clientY - rect.top) * canvas.height / rect.height;
+      const width = Math.min(canvas.width, Math.max(48, canvas.width * Number(select.value)));
+      const height = Math.min(canvas.height, Math.max(48, canvas.height * Number(select.value)));
+      const left = Math.max(0, Math.floor(x - width / 2));
+      const top = Math.max(0, Math.floor(y - height / 2));
+      pixelateRect(ctx, { left, top, width: Math.min(width, canvas.width - left), height: Math.min(height, canvas.height - top) });
+      save.disabled = undo.disabled = false;
+    };
+    save.onclick = () => { onSave(canvas.toDataURL('image/jpeg', 0.88)); close(); };
+  }).catch(() => { help.textContent = '사진을 열지 못했어요.'; });
+  actions.append(cancel, undo, save);
+  panel.append(title, help, sizeRow, canvas, actions); modal.append(panel);
+  document.body.append(modal);
+}
+
 function movePhoto(from, to) {
   [photos[from], photos[to]] = [photos[to], photos[from]];
   photoOrderEdited = true;
@@ -65,6 +131,12 @@ function renderPhotos() {
     for (const [text, title, action, disabled] of [
       ['←', '사진 앞으로 이동', () => movePhoto(i, i - 1), i === 0],
       ['→', '사진 뒤로 이동', () => movePhoto(i, i + 1), i === photos.length - 1],
+      ['▦', '얼굴 직접 가리기', () => openMosaicEditor(p.image, updated => {
+        p.image = updated;
+        p.manualMosaics = (p.manualMosaics || 0) + 1;
+        syncPhotoImage(p.id, updated);
+        renderPhotos();
+      }), false],
       ['×', '사진 삭제', () => {
         photos.splice(i, 1);
         if (photos.length <= 1) photoOrderEdited = false;
@@ -77,7 +149,12 @@ function renderPhotos() {
     const caption = el('textarea'); caption.rows = 2; caption.maxLength = 500; caption.placeholder = '사진 설명 · 여기서 기억나는 이야기'; caption.value = p.caption;
     caption.setAttribute('aria-label', `${i + 1}번 사진 설명`);
     caption.oninput = () => { p.caption = caption.value; };
-    card.append(top, caption); $('#photo-list').append(card);
+    const status = el('p', 'photo-mosaic-status', p.faceCount === null
+      ? '자동 모자이크 미적용 · 직접 확인'
+      : p.faceCount > 0 ? `자동으로 얼굴 ${p.faceCount}개 가림`
+      : '인식된 얼굴 없음 · 직접 확인');
+    if (p.manualMosaics) status.textContent += ` · 수동 ${p.manualMosaics}회`;
+    card.append(top, status, caption); $('#photo-list').append(card);
   });
 }
 async function imageData(file) {
@@ -102,6 +179,7 @@ async function addPhotos(files) {
   const generate = $('#generate');
   generate.disabled = true;
   try {
+    $('#photo-status').textContent = $('#auto-mosaic').checked ? '얼굴을 자동 인식하고 모자이크 처리하는 중…' : '사진을 불러오는 중…';
     const { added, errors } = await readPhotos(files, 20 - photos.length);
     photos.push(...added);
     if (!photoOrderEdited) photos.sort(comparePhotoTimes);
@@ -117,13 +195,19 @@ async function readPhotos(files, slots) {
   const added = [], errors = [];
   for (const file of files) {
     if (added.length >= slots) { errors.push('사진은 최대 20장까지 등록할 수 있어요.'); break; }
-    try { added.push({ image: await imageData(file), caption: '', time: await photoTime(file) }); }
+    try {
+      const originalImage = await imageData(file);
+      const result = $('#auto-mosaic').checked ? await autoMosaic(originalImage) : { image: originalImage, count: null };
+      added.push({ id: newPhotoId(), originalImage, image: result.image, faceCount: result.count, caption: '', time: await photoTime(file) });
+    }
     catch (e) { errors.push(file.name + ': ' + (e.message || '사진을 읽을 수 없어요.')); }
   }
   return { added: added.sort(comparePhotoTimes), errors };
 }
 function photoSummary(added, errors) {
-  return [added.length ? `${added.length}장 추가했어요.` : '', ...errors].filter(Boolean).join(' ');
+  const faces = added.reduce((sum, p) => sum + (p.faceCount || 0), 0);
+  const auto = added.filter(p => p.faceCount !== null).length;
+  return [added.length ? `${added.length}장 추가 · ${auto}장 검사 · 얼굴 ${faces}개 자동 가림.` : '', ...errors].filter(Boolean).join(' ');
 }
 $('#photos').onchange = event => addPhotos([...event.target.files]);
 for (const name of ['dragenter', 'dragover']) $('#dropzone').addEventListener(name, event => { event.preventDefault(); $('#dropzone').classList.add('dragging'); });
@@ -408,7 +492,7 @@ function renderDraft(data) {
   for (const section of data.sections) {
     if (section.heading) article.append(editable('h2', '', section.heading));
     if (Number.isInteger(section.photoIndex) && outputPhotos[section.photoIndex]) {
-      const img = el('img'); img.src = outputPhotos[section.photoIndex].image; img.alt = outputPhotos[section.photoIndex].caption || `방문 사진 ${section.photoIndex + 1}`; article.append(img);
+      const img = el('img'); img.src = outputPhotos[section.photoIndex].image; img.alt = outputPhotos[section.photoIndex].caption || `방문 사진 ${section.photoIndex + 1}`; img.dataset.photoId = outputPhotos[section.photoIndex].id; article.append(img);
       img.addEventListener('load', updateChecklist, { once: true });
       if (section.caption) article.append(editable('p', 'photo-caption', section.caption, '사진 한 줄 설명'));
       article.append(photoActions(img));
@@ -688,7 +772,10 @@ $('#restore-file').onchange = async event => {
       const replacement = editable(node.tagName.toLowerCase(), node.className, node.textContent);
       node.replaceWith(replacement);
     });
-    outputPhotos = [...article.querySelectorAll('img')].map(img => ({ image: img.src, caption: img.alt }));
+    outputPhotos = [...article.querySelectorAll('img')].map(img => {
+      const id = newPhotoId(); img.dataset.photoId = id;
+      return { id, image: img.src, originalImage: img.src, faceCount: null, caption: img.alt };
+    });
     photos = outputPhotos.map(p => ({ ...p }));
     photoOrderEdited = true;
     draft = { mode: 'restored' };
@@ -715,7 +802,17 @@ function photoActions(img) {
     } catch { toast('사진 복사가 제한됐어요. 사진 ZIP을 저장해 블로그에 업로드해주세요.', true); }
   };
 
-  actions.append(copyImage);
+  const blur = el('button', '', '얼굴 직접 가리기'); blur.type = 'button';
+  blur.onclick = () => openMosaicEditor(img.src, updated => {
+    img.src = updated;
+    const id = img.dataset.photoId;
+    const photo = photos.find(p => p.id === id);
+    if (photo) { photo.image = updated; photo.manualMosaics = (photo.manualMosaics || 0) + 1; renderPhotos(); }
+    if (id) syncPhotoImage(id, updated);
+    invalidateCopyParts();
+    updateChecklist();
+  });
+  actions.append(copyImage, blur);
   return actions;
 }
 const previewArticle = $('#article');
