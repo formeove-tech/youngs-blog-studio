@@ -1,3 +1,4 @@
+import { FACE_MOSAIC_SETTINGS } from './mosaic-settings.js';
 // Face detection is performed in the visitor's browser. Only the WASM code and
 // model files are downloaded; uploaded photo pixels are not sent to this CDN.
 const SDK = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22';
@@ -18,7 +19,7 @@ async function detectors() {
         runningMode: 'IMAGE',
         minDetectionConfidence: 0.35
       })));
-    })();
+    })().catch(error => { detectorsPromise = null; throw error; });
   }
   return detectorsPromise;
 }
@@ -40,8 +41,8 @@ export function pixelateRect(ctx, region) {
   if (!(width > 0 && height > 0)) return;
   const sample = document.createElement('canvas');
   // Deliberately coarse: around 8–12 large blocks across a face.
-  sample.width = Math.max(1, Math.ceil(width / Math.max(12, width / 10)));
-  sample.height = Math.max(1, Math.ceil(height / Math.max(12, height / 10)));
+  sample.width = Math.max(1, Math.ceil(width / Math.max(12, width / FACE_MOSAIC_SETTINGS.blocksAcrossFace)));
+  sample.height = Math.max(1, Math.ceil(height / Math.max(12, height / FACE_MOSAIC_SETTINGS.blocksAcrossFace)));
   const source = sample.getContext('2d');
   source.drawImage(ctx.canvas, left, top, width, height, 0, 0, sample.width, sample.height);
   ctx.save();
