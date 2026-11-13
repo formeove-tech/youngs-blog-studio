@@ -81,3 +81,5 @@
 .mosaic-edit-canvas{display:block;max-width:100%;max-height:65vh;object-fit:contain;margin:0 auto;cursor:crosshair;border-radius:5px;border:1px solid #e1e5da}
 .mosaic-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:15px}
 .mosaic-save{background:#36553e;color:white}
+
+.photo-review-needed{border:2px solid #bb7b42;background:#fffaf2}.photo-review-needed .photo-mosaic-status{color:#9a4c29;font-weight:600}
