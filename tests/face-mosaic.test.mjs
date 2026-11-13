@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { faceRegion } from '../public/face-mosaic.js';
+import { FACE_MOSAIC_SETTINGS } from '../public/mosaic-settings.js';
 
 test('face regions include padding and stay inside the photo', () => {
   assert.deepEqual(faceRegion({originX: 20,originY:20,width:40,height:40},100,100),
@@ -18,4 +19,12 @@ test('invalid rectangles are ignored', () => {
   assert.equal(faceRegion({originX:0,originY:0,width:-1,height:10},100,100),null);
   assert.equal(faceRegion({originX:0,originY:0,width:10,height:10},0,100),null);
   assert.equal(faceRegion(null,100,100),null);
+});
+
+test('blog privacy preferences target all people with pixel mosaic', () => {
+  assert.equal(FACE_MOSAIC_SETTINGS.target, 'all');
+  assert.equal(FACE_MOSAIC_SETTINGS.style, 'pixel');
+  assert.equal(FACE_MOSAIC_SETTINGS.defaultEnabled, true);
+  assert.equal(FACE_MOSAIC_SETTINGS.retainOriginalDuringSession, true);
+  assert.ok(FACE_MOSAIC_SETTINGS.blocksAcrossFace <= 12);
 });
