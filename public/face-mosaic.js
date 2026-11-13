@@ -71,11 +71,15 @@ export async function autoMosaic(imageDataUrl) {
   const regions = detections.map(d => faceRegion(d.boundingBox, image.naturalWidth, image.naturalHeight))
     .filter(Boolean).sort((a, b) => b.width * b.height - a.width * a.height);
   const unique = regions.filter((region, i) => !regions.slice(0, i).some(other => overlaps(region, other)));
-  if (!unique.length) return { image: imageDataUrl, count: 0 };
+  const uncertainCount = detections.filter(d => {
+    const score = d.categories?.[0]?.score;
+    return Number.isFinite(score) && score < 0.60;
+  }).length;
+  if (!unique.length) return { image: imageDataUrl, count: 0, uncertainCount };
   const canvas = document.createElement('canvas');
   canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(image, 0, 0);
   for (const rect of unique) pixelateRect(ctx, rect);
-  return { image: canvas.toDataURL('image/jpeg', 0.88), count: unique.length };
+  return { image: canvas.toDataURL('image/jpeg', 0.88), count: unique.length, uncertainCount };
 }
