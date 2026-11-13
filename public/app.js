@@ -2,6 +2,7 @@ import { articleText, pngBlob, zipFiles, prepareClipboardParts } from './export.
 import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 import { photoTime } from './photo-time.js';
 import { autoMosaic, pixelateRect } from './face-mosaic.js';
+import { FACE_MOSAIC_SETTINGS } from './mosaic-settings.js';
 import { articleTypography, loadArticleFonts, styleExportedArticle } from './typography.js';
 const $ = s => document.querySelector(s);
 const form = $('#draft-form');
@@ -9,6 +10,8 @@ const placeHelp = '네이버 지도 공유 링크를 붙여넣으세요. 같은 
 const newPlaceKey = 'youngs:next-place:';
 let appliedPlace = null;
 let photos = [];
+const originalPhotoFiles = new Map(); // Browser memory only; never included in exported files or AI requests.
+const discardOriginals = () => originalPhotoFiles.clear();
 let nextPhotoId = 0;
 const newPhotoId = () => `photo-${++nextPhotoId}`;
 let photoOrderEdited = false;
@@ -52,6 +55,26 @@ function editable(tag, cls, text, placeholder = '') {
   });
   return node;
 }
+async function reprocessPhoto(photo) {
+  if (importing || busy || copyingBody) return toast('진행 중인 작업이 끝나면 다시 검사해주세요.');
+  const original = originalPhotoFiles.get(photo.id);
+  if (!original) return toast('원본 파일이 없는 사진이에요. 원본을 다시 업로드해주세요.', true);
+  if (photo.manualMosaics && !confirm('원본에서 얼굴을 다시 인식할까요? 기존 수동 모자이크 수정은 사라집니다.')) return;
+  importing = true;
+  $('#photo-status').textContent = '보관 중인 원본에서 얼굴을 다시 검사하고 있어요…';
+  try {
+    const source = await imageData(original);
+    const result = await autoMosaic(source);
+    photo.image = result.image;
+    photo.faceCount = result.count;
+    photo.manualMosaics = 0;
+    syncPhotoImage(photo.id, result.image);
+    renderPhotos();
+    $('#photo-status').textContent = `얼굴 ${result.count}개를 원본에서 다시 검사했습니다. 놓친 얼굴이 있는지 확인해주세요.`;
+  } catch (error) { toast(error.message || '얼굴 재검사에 실패했어요.', true); }
+  finally { importing = false; }
+}
+
 function syncPhotoImage(id, image) {
   const output = outputPhotos.find(p => p.id === id);
   if (output) output.image = image;
@@ -131,6 +154,7 @@ function renderPhotos() {
     for (const [text, title, action, disabled] of [
       ['←', '사진 앞으로 이동', () => movePhoto(i, i - 1), i === 0],
       ['→', '사진 뒤로 이동', () => movePhoto(i, i + 1), i === photos.length - 1],
+      ['⟳', '원본에서 얼굴 다시 검사', () => reprocessPhoto(p), !originalPhotoFiles.has(p.id)],
       ['▦', '얼굴 직접 가리기', () => openMosaicEditor(p.image, updated => {
         p.image = updated;
         p.manualMosaics = (p.manualMosaics || 0) + 1;
@@ -138,6 +162,7 @@ function renderPhotos() {
         renderPhotos();
       }), false],
       ['×', '사진 삭제', () => {
+        originalPhotoFiles.delete(p.id);
         photos.splice(i, 1);
         if (photos.length <= 1) photoOrderEdited = false;
         renderPhotos();
@@ -154,6 +179,7 @@ function renderPhotos() {
       : p.faceCount > 0 ? `자동으로 얼굴 ${p.faceCount}개 가림`
       : '인식된 얼굴 없음 · 직접 확인');
     if (p.manualMosaics) status.textContent += ` · 수동 ${p.manualMosaics}회`;
+    if (originalPhotoFiles.has(p.id)) status.textContent += ' · 원본 임시 보관';
     card.append(top, status, caption); $('#photo-list').append(card);
   });
 }
@@ -181,6 +207,10 @@ async function addPhotos(files) {
   try {
     $('#photo-status').textContent = $('#auto-mosaic').checked ? '얼굴을 자동 인식하고 모자이크 처리하는 중…' : '사진을 불러오는 중…';
     const { added, errors } = await readPhotos(files, 20 - photos.length);
+    for (const p of added) {
+      if (p.originalFile && FACE_MOSAIC_SETTINGS.retainOriginalDuringSession) originalPhotoFiles.set(p.id, p.originalFile);
+      delete p.originalFile; // Never send files in generated article data.
+    }
     photos.push(...added);
     if (!photoOrderEdited) photos.sort(comparePhotoTimes);
     renderPhotos();
@@ -198,7 +228,7 @@ async function readPhotos(files, slots) {
     try {
       const originalImage = await imageData(file);
       const result = $('#auto-mosaic').checked ? await autoMosaic(originalImage) : { image: originalImage, count: null };
-      added.push({ id: newPhotoId(), originalImage, image: result.image, faceCount: result.count, caption: '', time: await photoTime(file) });
+      added.push({ id: newPhotoId(), originalFile: file, image: result.image, faceCount: result.count, caption: '', time: await photoTime(file) });
     }
     catch (e) { errors.push(file.name + ': ' + (e.message || '사진을 읽을 수 없어요.')); }
   }
@@ -712,6 +742,7 @@ $('#download').onclick = () => {
 $('#reset').onclick = () => {
   if (busy || importing) return toast('진행 중인 작업이 끝나면 다시 시도해주세요.');
   if (!confirm('입력한 내용과 사진, 작성한 초안을 모두 지울까요?')) return;
+  discardOriginals();
   photos = []; photoOrderEdited = false; outputPhotos = []; draft = null; appliedPlace = null; form.reset(); renderPhotos();
   setFontStyle('default');
   $('#article').replaceChildren(); $('#article').hidden = true; $('#empty-preview').hidden = false;
@@ -772,9 +803,10 @@ $('#restore-file').onchange = async event => {
       const replacement = editable(node.tagName.toLowerCase(), node.className, node.textContent);
       node.replaceWith(replacement);
     });
+    discardOriginals(); // HTML saves only exported photos, not original uploads.
     outputPhotos = [...article.querySelectorAll('img')].map(img => {
       const id = newPhotoId(); img.dataset.photoId = id;
-      return { id, image: img.src, originalImage: img.src, faceCount: null, caption: img.alt };
+      return { id, image: img.src, faceCount: null, caption: img.alt };
     });
     photos = outputPhotos.map(p => ({ ...p }));
     photoOrderEdited = true;
@@ -852,13 +884,18 @@ $('#draft-photo-file').onchange = async event => {
   $('#draft-edit-status').textContent = '사진을 준비하고 있어요…';
   try {
     const { added, errors } = await readPhotos(files, 20 - previewArticle.querySelectorAll('img').length);
+    for (const p of added) {
+      if (p.originalFile && FACE_MOSAIC_SETTINGS.retainOriginalDuringSession) originalPhotoFiles.set(p.id, p.originalFile);
+      delete p.originalFile;
+    }
+    photos.push(...added);
     const nodes = added.flatMap(p => {
-      const img = el('img'); img.alt = '추가한 방문 사진';
+      const img = el('img'); img.alt = '추가한 방문 사진'; img.dataset.photoId = p.id;
       img.addEventListener('load', updateChecklist, { once: true });
       img.src = p.image;
       return [img, photoActions(img)];
     });
-    if (nodes.length) placeInDraft(photoAnchor, ...nodes);
+    if (nodes.length) { placeInDraft(photoAnchor, ...nodes); renderPhotos(); }
     $('#draft-edit-status').textContent = photoSummary(added, errors);
   } finally { importing = false; }
 };
