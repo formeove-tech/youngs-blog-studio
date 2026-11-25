@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
-const { isNaverPhoto, photoNumber, orderNaverPhotos } = createRequire(import.meta.url)('../extension/match.js');
+// match.js is a plain content script (no module system), so evaluate it the way the browser does.
+const { isNaverPhoto, photoNumber, orderNaverPhotos } = new Function(readFileSync(new URL('../extension/match.js', import.meta.url), 'utf8') + '\nreturn { isNaverPhoto, photoNumber, orderNaverPhotos };')();
 
 test('확장: 네이버에 올라간 사진 주소만 사진으로 본다', () => {
   assert.equal(isNaverPhoto('https://postfiles.pstatic.net/MjAy/a/01.jpg?type=w773'), true);
