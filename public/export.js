@@ -25,7 +25,7 @@ export function clipboardHtml(article) {
     p.replaceChildren();
     lines.forEach((line, i) => { if (i) p.append(document.createElement('br')); p.append(document.createTextNode(line)); });
   });
-  copy.querySelectorAll('img').forEach(img => { img.style.cssText = 'max-width:100%;height:auto;display:block;margin:20px 0;'; });
+  copy.querySelectorAll('img').forEach(img => { img.removeAttribute('data-name'); img.style.cssText = 'max-width:100%;height:auto;display:block;margin:20px 0;'; });
   copy.querySelectorAll('h1').forEach(h => { h.style.cssText = 'font-size:26px;line-height:1.6;font-weight:bold;margin:24px 0;' + (copy.dataset.template === 'warm' ? 'text-align:center;' : ''); });
   copy.querySelectorAll('h2').forEach(h => { h.style.cssText = 'font-size:19px;line-height:1.8;font-weight:bold;margin:32px 0 14px;'; });
   copy.querySelectorAll('blockquote').forEach(q => {
@@ -185,16 +185,29 @@ export function naverImageUrls(html) {
     if (url.protocol !== 'https:' || !NAVER_PHOTO_HOST.test(url.hostname)) continue;
     if (!urls.includes(url.href)) urls.push(url.href);
   }
-  // Photo ZIP files are named 01.jpg, 02.jpg…; Naver keeps the file name, so restore that order
-  // even when the photos were dropped into the editor in a different order.
-  const numbered = urls.map(href => {
-    const name = decodeURIComponent(new URL(href).pathname.split('/').pop() || '');
-    const match = /^(\d{2})\.(jpe?g|png|webp)$/i.exec(name);
-    return match ? Number(match[1]) : null;
-  });
-  if (urls.length && numbered.every(n => n !== null) && new Set(numbered).size === urls.length)
-    return urls.map((href, i) => [numbered[i], href]).sort((a, b) => a[0] - b[0]).map(([, href]) => href);
   return urls;
+}
+const photoStem = name => {
+  let text = String(name ?? '');
+  try { text = decodeURIComponent(text); } catch { /* keep the raw name */ }
+  return text.split(/[\\/]/).pop().replace(/\.[a-z0-9]{2,5}$/i, '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+};
+const urlStem = href => photoStem(new URL(href).pathname.split('/').pop());
+// Pair the photos in the article with the photos uploaded to Naver.
+// 1) by original file name (Naver keeps it in the address), 2) by photo ZIP number, 3) by upload order.
+export function matchNaverPhotos(urls, names) {
+  const count = names.length;
+  if (!count || urls.length < count) return null;
+  const stems = names.map(photoStem);
+  if (stems.every(Boolean) && new Set(stems).size === count) {
+    const picked = stems.map(stem => urls.filter(href => urlStem(href) === stem));
+    if (picked.every(found => found.length === 1)) return { urls: picked.map(([href]) => href), by: 'name' };
+  }
+  if (urls.length !== count) return null;
+  const numbered = urls.map(href => { const match = /^(\d{2})$/.exec(urlStem(href)); return match ? Number(match[1]) : null; });
+  if (numbered.every(n => n !== null) && new Set(numbered).size === count)
+    return { urls: urls.map((href, i) => [numbered[i], href]).sort((a, b) => a[0] - b[0]).map(([, href]) => href), by: 'number' };
+  return { urls: [...urls], by: 'order' };
 }
 export function photoFingerprint(article) {
   return [...article.querySelectorAll('img')].map(img => `${img.src.length}:${img.src.slice(-24)}`).join('|');

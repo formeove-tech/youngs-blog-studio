@@ -45,7 +45,7 @@ test('본문을 나눠 복사할 때 사진 표시 번호는 앞 구간에 이�
   assert.equal(articleText(part, true, 2), '[사진 03]\n\n[사진 04]');
 });
 
-import {naverImageUrls, applyNaverImages} from '../public/export.js';
+import {naverImageUrls, matchNaverPhotos, applyNaverImages} from '../public/export.js';
 test('네이버 편집기에서 복사한 HTML에서 네이버 사진 주소만 순서대로 뽑는다', () => {
   const html = '<p>글</p><img class="se-image-resource" src="https://postfiles.pstatic.net/MjAy/a/IMG_1.jpg?type=w773&amp;x=1">'
     + '<img src="https://ssl.pstatic.net/static/sticker.png"><img src="data:image/png;base64,AAAA">'
@@ -55,10 +55,26 @@ test('네이버 편집기에서 복사한 HTML에서 네이버 사진 주소만 
   assert.deepEqual(naverImageUrls(''), []);
   assert.deepEqual(naverImageUrls(null), []);
 });
-test('사진 ZIP 번호 파일명이면 올린 순서가 달라도 번호 순서로 맞춘다', () => {
-  const url = n => `https://postfiles.pstatic.net/MjAy/${n}x/${n}.jpg?type=w773`;
-  const html = ['03', '01', '02'].map(n => `<img src="${url(n)}">`).join('');
-  assert.deepEqual(naverImageUrls(html), [url('01'), url('02'), url('03')]);
+test('네이버 사진은 원본 파일 이름, ZIP 번호, 올린 순서 순으로 본문 사진과 짝을 맞춘다', () => {
+  const url = name => `https://postfiles.pstatic.net/MjAy/k/${encodeURIComponent(name)}?type=w773`;
+  // 파일 이름: 올린 순서가 달라도, 확장자·대소문자·공백이 달라도, 다른 사진이 섞여 있어도 맞춘다
+  const byName = matchNaverPhotos([url('KakaoTalk_2.jpg'), url('other.jpg'), url('라멘 사진.JPG'), url('IMG_0001.jpeg')], ['IMG_0001.JPG', '라멘 사진.jpg', 'kakaotalk_2.png']);
+  assert.equal(byName.by, 'name');
+  assert.deepEqual(byName.urls, [url('IMG_0001.jpeg'), url('라멘 사진.JPG'), url('KakaoTalk_2.jpg')]);
+  // 이름을 모르면(저장한 옛 글) ZIP 번호로
+  const byNumber = matchNaverPhotos([url('03.jpg'), url('01.jpg'), url('02.jpg')], ['', '', '']);
+  assert.equal(byNumber.by, 'number');
+  assert.deepEqual(byNumber.urls, [url('01.jpg'), url('02.jpg'), url('03.jpg')]);
+  // 그것도 아니면 올린 순서 그대로
+  const byOrder = matchNaverPhotos([url('b.jpg'), url('a.jpg')], ['', 'x.jpg']);
+  assert.equal(byOrder.by, 'order');
+  assert.deepEqual(byOrder.urls, [url('b.jpg'), url('a.jpg')]);
+  // 같은 이름이 두 장이면 이름으로 단정하지 않는다
+  assert.equal(matchNaverPhotos([url('a.jpg'), url('a.jpg?x'), url('b.jpg')].slice(0, 2), ['a.jpg', 'a.jpg']).by, 'order');
+  // 장수가 모자라거나, 이름으로 못 맞췄는데 장수가 다르면 연결하지 않는다
+  assert.equal(matchNaverPhotos([url('a.jpg')], ['a.jpg', 'b.jpg']), null);
+  assert.equal(matchNaverPhotos([url('a.jpg'), url('b.jpg'), url('c.jpg')], ['', '']), null);
+  assert.equal(matchNaverPhotos([], []), null);
 });
 test('네이버 사진 주소는 사진 수가 같을 때만 본문 사진에 적용한다', () => {
   const article = imgs => ({ imgs, querySelectorAll() { return this.imgs; } });

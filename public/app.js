@@ -1,4 +1,4 @@
-import { articleText, pngBlob, zipFiles, prepareClipboardParts, naverImageUrls, photoFingerprint, applyNaverImages } from './export.js';
+import { articleText, pngBlob, zipFiles, prepareClipboardParts, naverImageUrls, matchNaverPhotos, photoFingerprint, applyNaverImages } from './export.js';
 import { checklistItems, evaluateChecklist } from './naver-checklist.js';
 import { photoTime } from './photo-time.js';
 import { articleTypography, loadArticleFonts, styleExportedArticle } from './typography.js';
@@ -118,7 +118,7 @@ async function readPhotos(files, slots) {
   const added = [], errors = [];
   for (const file of files) {
     if (added.length >= slots) { errors.push('사진은 최대 20장까지 등록할 수 있어요.'); break; }
-    try { added.push({ image: await imageData(file), caption: '', time: await photoTime(file) }); }
+    try { added.push({ image: await imageData(file), caption: '', time: await photoTime(file), name: file.name }); }
     catch (e) { errors.push(file.name + ': ' + (e.message || '사진을 읽을 수 없어요.')); }
   }
   return { added: added.sort(comparePhotoTimes), errors };
@@ -410,7 +410,7 @@ function renderDraft(data) {
   for (const section of data.sections) {
     if (section.heading) article.append(editable('h2', '', section.heading));
     if (Number.isInteger(section.photoIndex) && outputPhotos[section.photoIndex]) {
-      const img = el('img'); img.src = outputPhotos[section.photoIndex].image; img.alt = outputPhotos[section.photoIndex].caption || `방문 사진 ${section.photoIndex + 1}`; article.append(img);
+      const img = el('img'); img.src = outputPhotos[section.photoIndex].image; img.alt = outputPhotos[section.photoIndex].caption || `방문 사진 ${section.photoIndex + 1}`; if (outputPhotos[section.photoIndex].name) img.dataset.name = outputPhotos[section.photoIndex].name; article.append(img);
       img.addEventListener('load', updateChecklist, { once: true });
       if (section.caption) article.append(editable('p', 'photo-caption', section.caption, '사진 한 줄 설명'));
       article.append(photoActions(img));
@@ -520,16 +520,21 @@ function clearNaverPhotos(message = '', error = false) {
   setNaverPhotoStatus(message, error);
 }
 function useNaverPhotoHtml(html) {
-  if (!draft) return;
+  if (!draft) return false;
   const body = exportBody();
-  const count = body.querySelectorAll('img').length;
-  if (!count) return setNaverPhotoStatus('본문에 사진이 없어요. 본문+사진 복사를 바로 눌러주세요.');
+  const names = [...body.querySelectorAll('img')].map(img => img.dataset.name || '');
+  const count = names.length;
+  if (!count) { setNaverPhotoStatus('본문에 사진이 없어요. ‘본문+사진 복사’를 바로 눌러주세요.'); return false; }
   const urls = naverImageUrls(html);
-  if (!urls.length) return clearNaverPhotos('네이버에 올린 사진을 찾지 못했어요. 네이버 글쓰기 화면에서 사진을 올린 뒤 본문을 전체 선택(Ctrl+A)·복사(Ctrl+C)하고 다시 눌러주세요.', true);
-  if (urls.length !== count) return clearNaverPhotos(`네이버에서 사진 ${urls.length}장을 찾았는데 본문 사진은 ${count}장이에요. 사진 ZIP의 사진을 모두 '개별 사진'으로 올린 뒤 다시 복사해주세요.`, true);
-  naverPhotos = { urls, fingerprint: photoFingerprint(body) };
+  if (!urls.length) { clearNaverPhotos('네이버에 올린 사진을 찾지 못했어요. 네이버 글쓰기 본문에 사진을 올린 뒤 전체 선택(Ctrl+A)·복사(Ctrl+C)하고 다시 눌러주세요.', true); return false; }
+  const match = matchNaverPhotos(urls, names);
+  if (!match) { clearNaverPhotos(`네이버에서 사진 ${urls.length}장을 찾았는데 본문 사진은 ${count}장이에요. 본문에 쓴 사진을 모두 ‘개별 사진’으로 올린 뒤 다시 복사해주세요.`, true); return false; }
+  naverPhotos = { urls: match.urls, fingerprint: photoFingerprint(body), by: match.by };
   invalidateCopyParts();
-  setNaverPhotoStatus(`네이버 사진 ${count}장을 연결했어요. 이제 ‘본문+사진 복사’를 누르고, 네이버 본문을 전체 선택(Ctrl+A)한 뒤 붙여넣으세요(Ctrl+V).`);
+  setNaverPhotoStatus(match.by === 'order'
+    ? `네이버 사진 ${count}장을 올린 순서대로 연결했어요. 붙여넣은 뒤 사진 순서가 맞는지 한 번 확인해주세요.`
+    : `네이버 사진 ${count}장을 ${match.by === 'name' ? '파일 이름으로' : '사진 번호로'} 연결했어요.`);
+  return true;
 }
 async function writeClipboardPart(part) {
   const payload = Promise.resolve(part);
@@ -575,12 +580,13 @@ $('#copy-title').onclick = async () => {
     $('#draft-edit-status').textContent = '제목을 복사했어요. 네이버 제목 칸에 붙여넣으세요.';
   } catch { toast('제목 복사가 제한됐어요. 미리보기에서 제목을 선택해 복사해주세요.', true); }
 };
-$('#copy').onclick = async () => {
-  if (!draft || copyingBody) return;
+async function copyBody() {
+  if (!draft || copyingBody) return false;
+  let copied = false;
   invalidateCopyParts();
   const revision = copyRevision;
   const body = exportBody();
-  if (!body.children.length) return toast('복사할 본문이 없어요.', true);
+  if (!body.children.length) { toast('복사할 본문이 없어요.', true); return false; }
   const photoCount = body.querySelectorAll('img').length;
   if (naverPhotos && naverPhotos.fingerprint !== photoFingerprint(body)) clearNaverPhotos('본문 사진이 바뀌었어요. 네이버에 사진을 다시 올리고 ‘네이버 사진 주소 가져오기’를 눌러주세요.');
   const linked = !!naverPhotos && applyNaverImages(body, naverPhotos.urls);
@@ -590,7 +596,7 @@ $('#copy').onclick = async () => {
   try {
     if (!navigator.clipboard?.write || !window.ClipboardItem) {
       await copyBodyText(body);
-      return;
+      return false;
     }
     // Start the clipboard write inside the click, while larger photo copies are being prepared.
     const preparation = prepareClipboardParts(body).then(parts => {
@@ -598,6 +604,7 @@ $('#copy').onclick = async () => {
       return parts;
     });
     const [parts] = await Promise.all([preparation, writeClipboardPart(preparation.then(parts => parts[0]))]);
+    copied = linked;
     if (revision !== copyRevision) {
       if (draft) $('#draft-edit-status').textContent = '복사 중에 글이 수정됐어요. 최신 본문을 다시 복사해주세요.';
     } else if (parts.length > 1) {
@@ -613,8 +620,9 @@ $('#copy').onclick = async () => {
   } catch {
     if (revision !== copyRevision) {
       if (draft) $('#draft-edit-status').textContent = '복사 중에 글이 수정됐어요. 최신 본문을 다시 복사해주세요.';
-      return;
+      return false;
     }
+    if (linked) { $('#draft-edit-status').textContent = '자동 복사가 막혔어요. ‘본문+사진 복사’를 한 번 눌러주세요.'; return false; }
     try { await copyBodyText(body); }
     catch { toast('복사가 제한됐어요. 사진 ZIP 안의 blog-text.txt에서 본문을 복사해주세요.', true); }
   } finally {
@@ -622,7 +630,9 @@ $('#copy').onclick = async () => {
     $('#copy').textContent = '본문+사진 복사';
     syncCopyButtons();
   }
-};
+  return copied;
+}
+$('#copy').onclick = () => { copyBody(); };
 $('#photo-zip').onclick = () => {
   const article = exportBody();
   const files = [...article.querySelectorAll('img')].map((img, i) => ({
@@ -694,6 +704,7 @@ $('#restore-file').onchange = async event => {
         const src = node.getAttribute('src') || '';
         if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/i.test(src)) throw new Error('사진이 내장된 작업실 HTML 파일이 필요해요.');
         copy.src = src; copy.alt = node.getAttribute('alt') || '저장한 방문 사진';
+        const name = node.getAttribute('data-name'); if (name) copy.dataset.name = name.slice(0, 200);
       }
       if (node.tagName === 'A') {
         const href = node.getAttribute('href') || '';
@@ -715,7 +726,7 @@ $('#restore-file').onchange = async event => {
       const replacement = editable(node.tagName.toLowerCase(), node.className, node.textContent);
       node.replaceWith(replacement);
     });
-    outputPhotos = [...article.querySelectorAll('img')].map(img => ({ image: img.src, caption: img.alt }));
+    outputPhotos = [...article.querySelectorAll('img')].map(img => ({ image: img.src, caption: img.alt, name: img.dataset.name || '' }));
     photos = outputPhotos.map(p => ({ ...p }));
     photoOrderEdited = true;
     draft = { mode: 'restored' };
@@ -784,7 +795,7 @@ $('#draft-photo-file').onchange = async event => {
   try {
     const { added, errors } = await readPhotos(files, 20 - previewArticle.querySelectorAll('img').length);
     const nodes = added.flatMap(p => {
-      const img = el('img'); img.alt = '추가한 방문 사진';
+      const img = el('img'); img.alt = '추가한 방문 사진'; if (p.name) img.dataset.name = p.name;
       img.addEventListener('load', updateChecklist, { once: true });
       img.src = p.image;
       return [img, photoActions(img)];
@@ -802,12 +813,12 @@ $('#naver-photos').onclick = async () => {
     for (const item of await navigator.clipboard.read()) {
       if (item.types.includes('text/html')) html += await (await item.getType('text/html')).text();
     }
-    useNaverPhotoHtml(html);
+    if (useNaverPhotoHtml(html)) await copyBody();
   } catch { setNaverPhotoStatus('클립보드 읽기가 허용되지 않았어요. 아래 칸을 누르고 Ctrl+V로 붙여넣어주세요.', true); }
 };
 $('#naver-paste').addEventListener('paste', event => {
   event.preventDefault();
-  useNaverPhotoHtml(event.clipboardData?.getData('text/html') ?? '');
+  if (useNaverPhotoHtml(event.clipboardData?.getData('text/html') ?? '')) copyBody();
 });
 $('#naver-paste').addEventListener('beforeinput', event => event.preventDefault());
 

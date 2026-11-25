@@ -58,14 +58,13 @@
               <button id="copy-title" type="button" disabled>제목 복사</button>
               <button id="copy" type="button" disabled>본문+사진 복사</button>
             </div>
-            <p class="field-help">제목을 먼저 붙여넣으세요. 사진이 있는 글은 아래 순서대로 하면 사진이 제자리에 들어가요.</p>
+            <p class="field-help">제목을 먼저 붙여넣으세요. 사진이 있는 글은 아래 3단계로 사진이 제자리에 들어가요.</p>
             <div class="naver-photo-steps">
               <strong>네이버에 사진까지 넣기</strong>
               <ol>
-                <li>‘사진 ZIP ↓’을 받아 압축을 풀고, 네이버 글쓰기 본문에 사진을 모두 끌어다 놓으세요. 배치를 물으면 ‘개별 사진’을 고르세요.</li>
+                <li>네이버 글쓰기 본문에 이 글에 쓴 사진을 모두 끌어다 놓으세요. 원본 사진 그대로 올려도 되고(순서 상관없음), 배치를 물으면 ‘개별 사진’을 고르세요.</li>
                 <li>네이버 본문을 눌러 전체 선택(Ctrl+A) 후 복사(Ctrl+C)하세요.</li>
-                <li>여기로 돌아와 <button id="naver-photos" class="secondary" type="button" disabled>네이버 사진 주소 가져오기</button> 를 누르세요.</li>
-                <li>‘본문+사진 복사’를 누르고, 네이버 본문을 전체 선택(Ctrl+A)한 뒤 붙여넣으세요(Ctrl+V).</li>
+                <li>여기로 돌아와 <button id="naver-photos" class="secondary" type="button" disabled>네이버 사진 연결하고 본문 복사</button> 를 누른 뒤, 네이버 본문에서 전체 선택(Ctrl+A)·붙여넣기(Ctrl+V) 하세요.</li>
               </ol>
               <div id="naver-paste" class="naver-paste" contenteditable="true" role="textbox" aria-label="네이버에서 복사한 본문 붙여넣기" data-placeholder="버튼이 안 되면 여기를 누르고 Ctrl+V"></div>
               <p id="naver-photo-status" class="field-help" aria-live="polite"></p>
