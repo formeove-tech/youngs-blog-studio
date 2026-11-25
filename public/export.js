@@ -172,3 +172,36 @@ export async function prepareClipboardParts(article, maxBytes = NAVER_COPY_BUDGE
     return part;
   });
 }
+
+// Naver only keeps photos that live on its own servers. After the photos are uploaded in the
+// Naver editor, its copied HTML carries their addresses; reuse them so one paste places every photo.
+const NAVER_PHOTO_HOST = /(^|\.)(postfiles|blogfiles|blogthumb|mblogthumb-phinf|blogthumb-phinf|postfiles\d*)\.pstatic\.net$|(^|\.)phinf\.pstatic\.net$/i;
+export function naverImageUrls(html) {
+  const urls = [];
+  for (const [, , raw] of String(html ?? '').matchAll(/<img\b[^>]*?\ssrc\s*=\s*(["'])(.*?)\1/gi)) {
+    const src = raw.replace(/&amp;/g, '&').trim();
+    let url;
+    try { url = new URL(src); } catch { continue; }
+    if (url.protocol !== 'https:' || !NAVER_PHOTO_HOST.test(url.hostname)) continue;
+    if (!urls.includes(url.href)) urls.push(url.href);
+  }
+  // Photo ZIP files are named 01.jpg, 02.jpg…; Naver keeps the file name, so restore that order
+  // even when the photos were dropped into the editor in a different order.
+  const numbered = urls.map(href => {
+    const name = decodeURIComponent(new URL(href).pathname.split('/').pop() || '');
+    const match = /^(\d{2})\.(jpe?g|png|webp)$/i.exec(name);
+    return match ? Number(match[1]) : null;
+  });
+  if (urls.length && numbered.every(n => n !== null) && new Set(numbered).size === urls.length)
+    return urls.map((href, i) => [numbered[i], href]).sort((a, b) => a[0] - b[0]).map(([, href]) => href);
+  return urls;
+}
+export function photoFingerprint(article) {
+  return [...article.querySelectorAll('img')].map(img => `${img.src.length}:${img.src.slice(-24)}`).join('|');
+}
+export function applyNaverImages(article, urls) {
+  const photos = [...article.querySelectorAll('img')];
+  if (!urls?.length || photos.length !== urls.length) return false;
+  photos.forEach((photo, i) => { photo.src = urls[i]; });
+  return true;
+}

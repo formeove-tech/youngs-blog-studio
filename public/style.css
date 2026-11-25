@@ -65,3 +65,26 @@
   margin: 0 0 8px;
   font-size: 11px;
 }
+
+.naver-photo-steps {
+  margin-top: 9px;
+  padding: 10px 12px;
+  border: 1px solid #dfe5d6;
+  border-radius: 7px;
+  background: #f7f9f2;
+  font-size: 11px;
+}
+.naver-photo-steps ol { margin: 6px 0 8px; padding-left: 18px; line-height: 1.9; }
+.naver-photo-steps .secondary { padding: 4px 9px; }
+.naver-paste {
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px dashed #cfd9c5;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 10px;
+  color: #919988;
+  outline: none;
+}
+.naver-paste:focus { border-color: #7f9b71; }
+.naver-paste:empty:before { content: attr(data-placeholder); }
